@@ -3673,9 +3673,10 @@ directly.
 
 ** Does it work on macOS or Windows?
 Nobody has tried yet.  Vellumory is developed and tested on Linux.  The Nix
-flake also declares Apple silicon Macs (=aarch64-darwin=): nixpkgs has every
-dependency there, and the code avoids calls only Linux has, but nobody has
-built or run it on a Mac.  Intel Macs are out, since nixpkgs 26.11 dropped
+flake also declares Apple silicon Macs (=aarch64-darwin=), and CI builds it on
+macOS 26 and runs its tests there (the Lean suites, the proof audit and the
+Emacs tests) on every change; but nobody has used the reader on a Mac yet.
+Intel Macs are out, since nixpkgs 26.11 dropped
 them.  Reports from other systems are welcome.
 
 ** Can I print?

@@ -105,8 +105,8 @@ state a document has been in.
 - Not for text terminals: pages are images, so it needs a graphical Emacs.
 - Not in a package archive yet, and there are no prebuilt binaries yet:
   the worker is built from source, which Nix makes one command.
-- Not yet built on a Mac, and untried on Windows: the flake declares Apple
-  silicon Macs, but nobody has built it on one.
+- Not yet used on a Mac, and untried on Windows: CI builds it and runs its
+  tests on Apple silicon, but nobody has read a document with it there.
 
 The full list is under [[#known-limitations][Known limitations]].
 
@@ -1158,8 +1158,9 @@ can fix it, offers a button.
 - *Can I edit the text on a page?*  No.  For the raw PDF, the syntax view
   lets an expert change objects.
 - *macOS or Windows?*  The flake also declares Apple silicon Macs
-  (=aarch64-darwin=): nixpkgs has every dependency there, and the code avoids
-  calls only Linux has, but nobody has built or run it on a Mac yet.  Intel
+  (=aarch64-darwin=), and CI builds it on macOS 26 and runs its tests there
+  (the Lean suites, the proof audit and the Emacs tests) on every change; but
+  nobody has used the reader on a Mac yet.  Intel
   Macs are out: nixpkgs 26.11 dropped them.  Windows is untried.  Reports are
   welcome.
 - *Can I print or sign?*  Neither yet: print the file with your system's
@@ -1180,8 +1181,9 @@ can fix it, offers a button.
 :END:
 - Needs a graphical Emacs; no text terminal.
 - Tested on Linux x86_64 only, with Emacs 31.1 and 32 (development).
-  On Emacs 29 and 30 only the batch tests have run (they pass); macOS (Apple
-  silicon, declared in the flake) and Windows are untried.
+  On Emacs 29 and 30 only the batch tests have run (they pass); on macOS (Apple
+  silicon) CI runs the batch tests, the reader is unused there, and Windows is
+  untried.
 - The worker is built from source; Nix is the only tested way.  No prebuilt
   binaries and no package archive yet.  The straight.el, Elpaca,
   package-vc and Spacemacs recipes are untested.

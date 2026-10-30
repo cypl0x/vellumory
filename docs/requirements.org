@@ -395,8 +395,10 @@ freed memory kept by the C library (Emacs 528 MiB after 40 pages of ISO
 ** TODO macOS: the flake declares Apple silicon (every dependency evaluates
 there), the code avoids calls only Linux has (a sweep without /proc tested
 in a namespace that hides it) and Clang compiles the native code without a
-warning; a CI job builds on macOS once the repository is public.  Not built
-on a Mac yet
+warning.  Since 2026-10-30 CI on macOS 26 (Apple silicon) builds the
+package and runs the 27 Lean suites, the proof audit and the 89 Emacs tests
+(88 pass, the same one skipped as on Linux).  The reader itself has not been
+used on a Mac yet
 
 * Distinct project name
 Vellumory: exact-name searches returned no results (docs/research.org).
