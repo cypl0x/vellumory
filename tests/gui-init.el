@@ -9,7 +9,9 @@
   ;; As the README sets it up: documents visited with find-file open here.
   (vellumory-install)
   (setq vellumory-program (expand-file-name ".lake/build/bin/vellumory" root)
-        vellumory-state-directory (expand-file-name "target/review/state" root))
+        ;; A run that must start from no saved positions names its own.
+        vellumory-state-directory (or (getenv "VELLUMORY_REVIEW_STATE")
+                                      (expand-file-name "target/review/state" root)))
   (set-frame-name "Vellumory review")
   (set-frame-size (selected-frame) 110 45)
   (set-face-attribute 'default nil :height 120)

@@ -54,6 +54,27 @@ jobs:
           restore-prefixes-first-match: nix-${{ runner.os }}-
       - name: Build the package and run its tests
         run: nix build .#vellumory --print-build-logs
+      - name: Build the worker for the GUI suite
+        run: |
+          nix develop .#ci --command lean --run scripts/Build.lean prepare
+          nix develop .#ci --command lean --run scripts/Build.lean lake build vellumory Vellumory.Fixtures
+          nix develop .#ci --command lean --run scripts/Build.lean autoloads
+      # The reader itself: the GUI suite in Emacs's Cocoa build, in the
+      # runner's desktop session, with a screenshot of the reader.
+      - name: GUI suite in Emacs on macOS
+        timeout-minutes: 30
+        run: |
+          emacs="$(nix develop .#ci --command printenv VELLUMORY_GUI_EMACS)"
+          nix develop .#ci --command lean --run scripts/Build.lean lake env lean --run scripts/Review.lean guidirect "$emacs"
+      - name: Keep the GUI report and screenshot
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-gui
+          path: |
+            target/review/gui-direct.txt
+            target/review/gui-direct.png
+          if-no-files-found: ignore
 
   emacs:
     name: Emacs ${{ matrix.emacs }}

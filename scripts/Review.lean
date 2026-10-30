@@ -214,6 +214,71 @@ def guiTests (_ : Parsed) : IO UInt32 := do
     ["--socket-name=vellumory-review", "--eval", code])
   IO.print result.stdout
   return 0
+/-- The GUI suite in a graphical Emacs started directly: no X server, Wayland
+    compositor or daemon, as on macOS, where Emacs draws with Cocoa. A
+    graphical Emacs prints ERT's report to *Messages*, not to standard output,
+    so the report, the log and the counts go to target/review/gui-direct.txt;
+    on macOS a screenshot of the reader goes to target/review/gui-direct.png.
+    The exit status is Emacs's: 0 when every test passed or was skipped. -/
+def guiDirect (p : Parsed) : IO UInt32 := do
+  let root ← IO.currentDir
+  let output := root / "target/review"
+  IO.FS.createDirAll output
+  IO.FS.writeFile (output / "reader.pdf") Fixtures.reader
+  IO.FS.writeFile (output / "long-reader.pdf") Fixtures.longReader
+  IO.FS.writeFile (output / "book-reader.pdf") bookReader
+  IO.FS.writeFile (output / "slides.pdf") slides
+  IO.FS.writeFile (output / "margins.pdf") margins
+  let report := output / "gui-direct.txt"
+  if ← report.pathExists then IO.FS.removeFile report
+  -- Positions saved by an earlier run would open the reader elsewhere than
+  -- the suite expects: this run keeps its own, from nothing.
+  let state := output / "gui-direct-state"
+  if ← state.pathExists then IO.FS.removeDirAll state
+  let emacs := p.positionalArg! "emacs" |>.as! String
+  -- --eval runs while Emacs starts, before its first frame is shown: windows
+  -- have no final size yet. The suite starts from a timer in the command
+  -- loop, as an emacsclient request does, once the frame is visible.
+  let code := s!"(run-with-timer 1 nil (lambda () (let ((report {repr report.toString}) (shot {repr (output / "gui-direct.png").toString}))
+  (setq message-log-max t)
+  (condition-case err
+      (progn
+        (let ((deadline (+ (float-time) 30)))
+          (while (and (< (float-time) deadline) (not (frame-visible-p (selected-frame))))
+            (sit-for 0.1)))
+        (load {repr (root / "tests/gui-init.el").toString})
+        (with-current-buffer \"reader.pdf\"
+          (let ((deadline (+ (float-time) 60)))
+            (while (and (< (float-time) deadline) (not vellumory--pages))
+              (accept-process-output nil 0.05) (redisplay t))))
+        (sit-for 2)
+        (when (executable-find \"screencapture\") (call-process \"screencapture\" nil nil nil \"-x\" shot))
+        (with-selected-window (get-buffer-window \"reader.pdf\" t)
+          (load {repr (root / "tests/gui-tests.el").toString})
+          (let ((stats (ert-run-tests-batch \"vellumory-gui\")))
+            (with-temp-file report
+              (insert (format \"%s %s: passed %d, unexpected %d, skipped %d\\n\\n\" window-system emacs-version
+                              (ert-stats-completed-expected stats) (ert-stats-completed-unexpected stats)
+                              (ert-stats-skipped stats)))
+              (insert-buffer-substring \"*Messages*\"))
+            (kill-emacs (if (zerop (ert-stats-completed-unexpected stats)) 0 1)))))
+    (error (with-temp-file report
+             (insert (format \"error before the suite finished: %S\\n\\n\" err))
+             (insert-buffer-substring \"*Messages*\"))
+           (kill-emacs 2))))))"
+  let result ← IO.Process.output { cmd := emacs, args := #["-Q", "--eval", code],
+                                   env := #[("VELLUMORY_REVIEW_ROOT", some root.toString),
+                                          ("VELLUMORY_REVIEW_STATE", some state.toString)] }
+  IO.print result.stdout
+  IO.eprint result.stderr
+  if ← report.pathExists then IO.print (← IO.FS.readFile report)
+  else IO.println s!"{emacs} wrote no report (exit {result.exitCode})"
+  return if result.exitCode == 0 && (← report.pathExists) then 0 else 1
+def guiDirectCmd : Cmd := `[Cli|
+  guidirect VIA guiDirect; "Run the GUI suite in a graphical Emacs started directly (macOS: no X server)."
+  ARGS:
+    emacs : String; "A graphical Emacs executable."
+]
 def guiCmd : Cmd := `[Cli|
   gui VIA guiTests; "Run real redisplay tests through the isolated emacsclient socket."
 ]
@@ -1050,6 +1115,7 @@ def cli : Cmd := `[Cli|
     testCmd;
     rasterCmd;
     guiCmd;
+    guiDirectCmd;
     clickCmd;
     hoverCmd;
     keyCmd;

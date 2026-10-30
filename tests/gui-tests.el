@@ -500,11 +500,17 @@ Emacs copies a split window's start, not its vscroll."
           (progn (vellumory-gui--settle)
                  (redisplay t)
                  (dolist (window (list (selected-window) other))
-                   (let ((position (vellumory--reading-position window)))
-                     (should (equal (alist-get 'page position) (alist-get 'page before)))
-                     ;; To a pixel of the narrower layout.
-                     (should (< (abs (- (alist-get 'y position) (alist-get 'y before)))
-                                (* 1.01 (vellumory--points-per-pixel (alist-get 'page before))))))))
+                   (let ((position (vellumory--reading-position window))
+                         ;; A window scrolls no further than to show the
+                         ;; document's end; in a narrow frame the pages are
+                         ;; short enough that the place lies beyond.
+                         (limit (max 0 (- (vellumory--total-height) (window-body-height window t)))))
+                     (if (> (vellumory--offset-of (alist-get 'page before) (alist-get 'y before)) limit)
+                         (should (= (vellumory--absolute-position window) limit))
+                       (should (equal (alist-get 'page position) (alist-get 'page before)))
+                       ;; To a pixel of the narrower layout.
+                       (should (< (abs (- (alist-get 'y position) (alist-get 'y before)))
+                                  (* 1.01 (vellumory--points-per-pixel (alist-get 'page before)))))))))
         (delete-window other)))
     (vellumory-gui--settle)
     ;; Closing every other window: Emacs recomputes the remaining window's start
@@ -1161,13 +1167,16 @@ window, goes on to the next page, and returns the pages at the page reached."
 
 (ert-deftest vellumory-gui-reflow-in-narrow-windows ()
   "With `vellumory-reflow-narrow-width', a window too narrow for the pages
-shows them reflowed, and the pages again once it is wide."
+shows them reflowed, and the pages again once it is wide.  The threshold is
+half the window's width, so that the 30 columns split off are below it and
+the rest above, however wide the frame is."
   (skip-unless (display-graphic-p))
   (with-selected-window (get-buffer-window "reader.pdf" t)
-    (let ((source (current-buffer)) (vellumory-reflow-narrow-width 60) (narrow nil))
+    (skip-unless (> (window-total-width) 70))
+    (let ((source (current-buffer)) (vellumory-reflow-narrow-width (/ (window-total-width) 2)) (narrow nil))
       (unwind-protect
           (progn
-            (setq narrow (split-window-right (- (window-total-width) 40)))
+            (setq narrow (split-window-right (- (window-total-width) 30)))
             (with-selected-window narrow (switch-to-buffer source))
             (let ((deadline (+ (float-time) 5)))
               (while (and (< (float-time) deadline)

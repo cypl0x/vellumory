@@ -544,6 +544,10 @@
                   pkgs.zizmor
                 ];
               }
+              # macOS: Emacs's Cocoa build, for the GUI suite (Review.lean guidirect).
+              // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+                VELLUMORY_GUI_EMACS = "${pkgs.emacs}/bin/emacs";
+              }
             );
           };
         in
