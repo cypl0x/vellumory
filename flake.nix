@@ -542,7 +542,9 @@
                   pkgs.vale
                   pkgs.actionlint
                   pkgs.zizmor
-                ];
+                ]
+                # macOS: the GUI suite reads frame pixels from screen captures.
+                ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ pkgs.imagemagick ];
               }
               # macOS: Emacs's Cocoa build, for the GUI suite (Review.lean guidirect).
               // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {

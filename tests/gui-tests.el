@@ -399,25 +399,46 @@ nothing to show more readily, the review frame itself."
     (vellumory-fit-width)
     (vellumory-first-page)))
 
+(defun vellumory-gui--can-capture-p ()
+  "Whether the selected frame's pixels can be read: exported by Emacs where
+it draws with Cairo (X, pgtk), or captured from the screen on macOS."
+  (and (display-graphic-p) (executable-find "magick")
+       (or (fboundp 'x-export-frames) (executable-find "screencapture"))))
+
+(defun vellumory-gui--capture-frame (png)
+  "Write what redisplay painted in the selected frame to PNG.
+Return how many of its pixels make one frame pixel (2 on a Retina display)."
+  (if (fboundp 'x-export-frames)
+      (let ((coding-system-for-write 'no-conversion))
+        (write-region (x-export-frames nil 'png) nil png nil 'silent)
+        1)
+    ;; macOS: its Cocoa build exports no frames; capture the frame's area.
+    (redisplay t)
+    (pcase-let ((`(,left ,top ,right ,bottom) (frame-edges nil 'native-edges)))
+      (should (zerop (call-process "screencapture" nil nil nil "-x"
+                                   (format "-R%d,%d,%d,%d" left top (- right left) (- bottom top))
+                                   png)))
+      (with-temp-buffer
+        (should (zerop (call-process "magick" nil t nil "identify" "-format" "%w" png)))
+        (/ (float (string-to-number (buffer-string))) (- right left))))))
+
 (defmacro vellumory-gui--with-frame-pixels (pixel &rest body)
   "Run BODY with PIXEL bound to a function of X Y giving the RGB that
-redisplay painted there, from one export of the selected frame."
+redisplay painted there, from one capture of the selected frame."
   (declare (indent 1))
   `(let ((png (make-temp-file "vellumory-frame-" nil ".png"))
          (ppm (make-temp-file "vellumory-frame-" nil ".ppm")))
      (unwind-protect
-         (progn
-           (let ((coding-system-for-write 'no-conversion))
-             (write-region (x-export-frames nil 'png) nil png nil 'silent))
+         (let ((scale (vellumory-gui--capture-frame png)))
            (should (zerop (call-process "magick" nil nil nil png ppm)))
-           (let ((,pixel (lambda (x y) (vellumory-gui--ppm-pixel ppm x y))))
+           (let ((,pixel (lambda (x y) (vellumory-gui--ppm-pixel ppm (round (* scale x)) (round (* scale y))))))
              ,@body))
        (delete-file png) (delete-file ppm))))
 
 (ert-deftest vellumory-gui-margins-are-desk-on-every-line ()
   "The centring margins are desk-coloured on every visible strip: on the
 window's first line, and on point's line under a line highlight."
-  (skip-unless (and (display-graphic-p) (fboundp 'x-export-frames) (executable-find "magick")))
+  (skip-unless (vellumory-gui--can-capture-p))
   (with-selected-window (get-buffer-window "reader.pdf" t)
     (unwind-protect
         (progn
@@ -572,7 +593,7 @@ clipped rows; redisplay must keep the exact pixel position anyway."
 
 (ert-deftest vellumory-gui-two-page-spread ()
   "Book spreads: pages 2 and 3 side by side, sharp, with a desk gutter between."
-  (skip-unless (and (display-graphic-p) (fboundp 'x-export-frames) (executable-find "magick")))
+  (skip-unless (vellumory-gui--can-capture-p))
   (let ((file (expand-file-name "target/review/long-reader.pdf" (getenv "VELLUMORY_REVIEW_ROOT")))
         (vellumory-spread 'book) buffer)
     (save-window-excursion
@@ -646,7 +667,7 @@ contents sidebar in place of the previews; the reader keeps focus."
   "Presenting: a frame of its own, each page fitted, centred on black and sharp
 at device resolution; a click on a link follows it, b blanks the screen, and
 leaving returns to the reader at the page last shown."
-  (skip-unless (and (display-graphic-p) (fboundp 'x-export-frames) (executable-find "magick")))
+  (skip-unless (vellumory-gui--can-capture-p))
   (let* ((file (expand-file-name "target/review/reader.pdf" (getenv "VELLUMORY_REVIEW_ROOT")))
         (reader-frame (selected-frame)) (existing (find-buffer-visiting file)) buffer presentation)
     (save-window-excursion
@@ -770,7 +791,7 @@ without contents keeps its previews and says why."
 (ert-deftest vellumory-gui-presentation-draws-page-transitions ()
   "A page's /Trans Wipe draws the new page sweeping in from the left over the
 old one for its /D seconds, then the page alone."
-  (skip-unless (and (display-graphic-p) (fboundp 'x-export-frames) (executable-find "magick")))
+  (skip-unless (vellumory-gui--can-capture-p))
   (let* ((file (expand-file-name "target/review/slides.pdf" (getenv "VELLUMORY_REVIEW_ROOT")))
          (reader-frame (selected-frame)) buffer presentation)
     (save-window-excursion
@@ -822,7 +843,7 @@ old one for its /D seconds, then the page alone."
 pages: mid-way a fade shows a mix of the colours, a dissolve some pixels of each
 page and nothing else, a glitter or a fly from the left the new page on the left; each frame
 is dropped from the image cache once replaced, and the page ends alone."
-  (skip-unless (and (display-graphic-p) (fboundp 'x-export-frames) (executable-find "magick")))
+  (skip-unless (vellumory-gui--can-capture-p))
   (let* ((file (expand-file-name "target/review/slides.pdf" (getenv "VELLUMORY_REVIEW_ROOT")))
          (reader-frame (selected-frame)) buffer presentation)
     (save-window-excursion
@@ -894,7 +915,7 @@ is dropped from the image cache once replaced, and the page ends alone."
 (ert-deftest vellumory-gui-keyboard-caret-and-selection ()
   "The caret mode puts a caret into the text in view; it is drawn on the page, moves by
 lines and words through MuPDF's characters, and v $ y copies a whole line."
-  (skip-unless (and (display-graphic-p) (fboundp 'x-export-frames) (executable-find "magick")))
+  (skip-unless (vellumory-gui--can-capture-p))
   (let* ((file (expand-file-name "target/review/reader.pdf" (getenv "VELLUMORY_REVIEW_ROOT")))
          (existing (find-buffer-visiting file)) buffer)
     (save-window-excursion
@@ -1030,7 +1051,7 @@ when the document is next closed."
   "Fitting to the content zooms until the page's ink, without its white
 margins, fills the window less the padding on each side, and keeps it there
 when the window changes size; another zoom ends it."
-  (skip-unless (and (display-graphic-p) (fboundp 'x-export-frames) (executable-find "magick")))
+  (skip-unless (vellumory-gui--can-capture-p))
   (let* ((file (expand-file-name "target/review/margins.pdf" (getenv "VELLUMORY_REVIEW_ROOT")))
          (existing (find-buffer-visiting file)) buffer)
     (save-window-excursion
@@ -1265,12 +1286,15 @@ rests, rather than kept there for `image-cache-eviction-delay'."
 reports quick ones as double and triple events, which once multiplied it."
   (skip-unless (display-graphic-p))
   (with-selected-window (get-buffer-window "reader.pdf" t)
-    (let (distances)
+    ;; The pointer over the page, as a real notch's position: inside the
+    ;; window's body, wherever point is.
+    (let ((posn (posn-at-x-y 10 10 (selected-window))) distances)
+      (should (eq (posn-window posn) (selected-window)))
       (cl-letf (((symbol-function 'vellumory-scroll)
                  (lambda (pixels &rest _)
                    (push (cons pixels (round (expt (window-body-height nil t) (/ 2.0 3)))) distances))))
         (dolist (kind '(wheel-down double-wheel-down triple-wheel-down))
-          (vellumory-wheel (list kind (posn-at-point) (pcase kind ('wheel-down 1) ('double-wheel-down 2) (_ 3))))))
+          (vellumory-wheel (list kind posn (pcase kind ('wheel-down 1) ('double-wheel-down 2) (_ 3))))))
       (should (= (length distances) 3))
       ;; Each notch: the window's height to the power 2/3, as GTK.
       (dolist (distance distances) (should (= (car distance) (cdr distance)))))))
