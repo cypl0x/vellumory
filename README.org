@@ -1179,8 +1179,8 @@ can fix it, offers a button.
 - *macOS or Windows?*  The flake also declares Apple silicon Macs
   (=aarch64-darwin=), and CI builds it on macOS 26 and runs its tests there
   on every change: the Lean suites, the proof audit, the Emacs tests, and the
-  graphical tests in Emacs's Cocoa build (all pass but one, which needs a
-  wider screen than the runner has).  No person has used it on a Mac yet.  Intel
+  graphical tests in Emacs's Cocoa build (all 32 pass).  No person has used
+  it on a Mac yet.  Intel
   Macs are out: nixpkgs 26.11 dropped them.  Windows is untried.  Reports are
   welcome.
 - *Can I print or sign?*  Neither yet: print the file with your system's

@@ -399,10 +399,12 @@ in a namespace that hides it) and Clang compiles the native code without a
 warning.  Since 2026-10-30 CI on macOS 26 (Apple silicon) builds the
 package and runs the 27 Lean suites, the proof audit and the 89 Emacs tests
 (88 pass, the same one skipped as on Linux), and the GUI suite in Emacs's
-Cocoa build in the runner's desktop session, with a screenshot: 31 pass, one
-needs a reader window wider than the runner's screen allows.  Frame pixels
-come from =screencapture= there (colour-managed: compared within 4 levels; the
-frame re-placed first, as Emacs's stored position goes stale).  No person has
+Cocoa build in the runner's desktop session, with a screenshot: all 32 pass
+(since 2026-10-30).  Frame pixels come from =screencapture= there
+(colour-managed: compared within 4 levels; a window with a title bar re-placed
+first, as Emacs's stored position goes stale; a presentation captured once
+its zoom into full screen has ended; transitions forgiven the frames a capture
+blocks).  No person has
 used it on a Mac yet
 
 * Distinct project name

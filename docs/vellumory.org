@@ -3677,8 +3677,7 @@ Nobody has tried yet.  Vellumory is developed and tested on Linux.  The Nix
 flake also declares Apple silicon Macs (=aarch64-darwin=), and CI builds it on
 macOS 26 and runs its tests there on every change: the Lean suites, the proof
 audit, the Emacs tests, and the graphical tests in Emacs's Cocoa build (all
-pass but one, which needs a wider screen than the runner has).  No person has
-used it on a Mac yet.
+32 pass).  No person has used it on a Mac yet.
 Intel Macs are out, since nixpkgs 26.11 dropped
 them.  Reports from other systems are welcome.
 
