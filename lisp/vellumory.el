@@ -5,7 +5,7 @@
 ;; Author: Wolfhard Prell <mail@wolfhard.net>
 ;; URL: https://github.com/cypl0x/vellumory
 ;; Package-Requires: ((emacs "29.1"))
-;; Version: 0.1.0
+;; Version: 0.1.1
 ;; Keywords: multimedia, files, tools
 
 ;; This program is free software: you can redistribute it and/or modify

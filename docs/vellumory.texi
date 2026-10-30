@@ -7,7 +7,7 @@
 @c %**end of header
 
 @copying
-This manual is for Vellumory@comma{} version 0.1.0@comma{} a reader for PDF and other
+This manual is for Vellumory@comma{} version 0.1.1@comma{} a reader for PDF and other
 documents in GNU Emacs.
 
 Copyright © 2026 Wolfhard Prell.
@@ -403,7 +403,7 @@ It has no print command.  Print the file with your system's tools.
 It needs Emacs 29.1 or newer.  Exporting Org to accessible PDF needs
 Org 9.7 or newer (Emacs 30's@comma{} or Org from GNU ELPA).
 @item
-It is young.  This manual describes version 0.1.0@comma{} its first release.
+It is young.  This manual describes version 0.1.1@comma{} its second release.
 It has been developed and tested on Linux (x86@math{_64})@comma{} with Emacs 31.1 and
 the development version of Emacs 32.
 @end itemize

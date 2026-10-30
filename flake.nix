@@ -62,7 +62,7 @@
         pkgs: epkgs:
         epkgs.trivialBuild {
           pname = "vellumory";
-          version = "0.1.0";
+          version = "0.1.1";
           src = ./lisp;
           nativeBuildInputs = [ pkgs.texinfo ];
           # The autoloads are generated, not committed, and the manual is built
@@ -131,7 +131,7 @@
                 };
           in
           builtins.derivation {
-            name = "vellumory-0.1.0";
+            name = "vellumory-0.1.1";
             system = pkgs.stdenv.hostPlatform.system;
             # Source preparation, build, tests and installation are Lean code.
             builder = "${pkgs.lean4}/bin/lean";

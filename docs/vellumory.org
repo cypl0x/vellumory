@@ -21,7 +21,7 @@ from the first page to the command line.
 :COPYING:  t
 :END:
 
-This manual is for Vellumory, version 0.1.0, a reader for PDF and other
+This manual is for Vellumory, version 0.1.1, a reader for PDF and other
 documents in GNU Emacs.
 
 Copyright © 2026 Wolfhard Prell.
@@ -128,7 +128,7 @@ not surprised later.
 - It has no print command.  Print the file with your system's tools.
 - It needs Emacs 29.1 or newer.  Exporting Org to accessible PDF needs
   Org 9.7 or newer (Emacs 30's, or Org from GNU ELPA).
-- It is young.  This manual describes version 0.1.0, its first release.
+- It is young.  This manual describes version 0.1.1, its second release.
   It has been developed and tested on Linux (x86_64), with Emacs 31.1 and
   the development version of Emacs 32.
 

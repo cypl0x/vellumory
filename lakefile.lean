@@ -8,7 +8,7 @@ open System Lake DSL
 def mupdfLibrary : String := if System.Platform.isOSX then "-lmupdf" else "-l:libmupdf.so.27.2"
 
 package vellumory where
-  version := v!"0.1.0"
+  version := v!"0.1.1"
   moreLeanArgs := #["-DwarningAsError=true"]
   moreLinkArgs := #["-L" ++ (get_config? mupdfLib |>.getD "/usr/lib"),
     "-Wl,-rpath," ++ (get_config? mupdfLib |>.getD "/usr/lib"), mupdfLibrary,

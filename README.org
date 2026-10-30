@@ -9,8 +9,8 @@ it makes so that any earlier state of a file can be restored byte for byte.
 
 It is an Emacs PDF viewer in the line of DocView and pdf-tools, and an
 alternative to them; it works in plain Emacs, with evil, and as a Doom
-Emacs module.  It is also young: this is version 0.1.0, developed and
-tested on Linux.
+Emacs module.  It is also young: this is version 0.1.1, developed on Linux
+and tested there and, by CI, on macOS.
 
 [[file:docs/screenshots/doom-reading.png]]
 
@@ -115,7 +115,7 @@ The full list is under [[#known-limitations][Known limitations]].
 :PROPERTIES:
 :CUSTOM_ID: status
 :END:
-Version 0.1.0 is the first public release.  It runs in its author's Doom
+Version 0.1.1 is its second release, a day after the first, 0.1.0.  It runs in its author's Doom
 Emacs on Emacs 32 (development, pgtk), and it is tested by
 a native Lean suite, headless ERT suites on Emacs 31.1 and 32, a GUI suite
 run on X11, on native Wayland and inside Doom, and 23 Lean theorems

@@ -351,7 +351,7 @@ def composeCmd : Cmd := `[Cli|
 ]
 
 def rootCmd : Cmd := `[Cli|
-  vellumory NOOP; ["0.1.0"]
+  vellumory NOOP; ["0.1.1"]
   "Lean PDF tooling. Native shell DSL, generated CLI, explicit proof boundaries."
   SUBCOMMANDS:
     checkCmd;
