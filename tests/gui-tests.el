@@ -725,7 +725,10 @@ leaving returns to the reader at the page last shown."
                   (while (and (< (float-time) deadline)
                               (not (and (equal edges (setq edges (frame-edges frame 'native-edges)))
                                         (>= (- (nth 2 edges) (nth 0 edges)) monitor))))
-                    (sit-for 0.3)))
+                    (sit-for 0.3))
+                  ;; macOS reports the new size as its zoom into full screen
+                  ;; starts; the screen shows the frame only once it ends.
+                  (when (eq window-system 'ns) (sit-for 1)))
                 (should (shown 0))
                 (should-not (window-parameter window 'mode-line-format))
                 (with-current-buffer presentation
