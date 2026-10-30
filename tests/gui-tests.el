@@ -428,6 +428,11 @@ after this.  (Without a window manager the frame never grows: 5 s, then on.)"
       (vellumory-gui--pause 0.3))
     (when (eq window-system 'ns) (vellumory-gui--pause 1))))
 
+(defun vellumory-gui--log (format-string &rest args)
+  "Log FORMAT-STRING with ARGS to *Messages* without showing it.
+A message in the echo area can resize the windows a test is measuring."
+  (let ((inhibit-message t)) (apply #'message format-string args)))
+
 (defvar vellumory-gui--tolerance 0
   "How far a captured colour may be from the painted one, per channel.
 None for a frame Emacs exports; a screen capture on macOS is colour-managed
@@ -461,7 +466,7 @@ Return how many of its pixels make one frame pixel (2 on a Retina display)."
     (redisplay t)
     (pcase-let ((`(,left ,top ,right ,bottom) (frame-edges nil 'native-edges)))
       ;; Where the capture lands is the screen's say, not Emacs's: log both.
-      (message "capture: native %S outer %S geometry %S" (frame-edges nil 'native-edges)
+      (vellumory-gui--log "capture: native %S outer %S geometry %S" (frame-edges nil 'native-edges)
                (frame-edges nil 'outer-edges) (frame-geometry))
       (should (zerop (call-process "screencapture" nil nil nil "-x"
                                    (format "-R%d,%d,%d,%d" left top (- right left) (- bottom top))
@@ -874,8 +879,16 @@ old one for its /D seconds, then the page alone."
                     (vellumory-gui--with-frame-pixels pixel
                       (should (vellumory-gui--near (funcall pixel (+ (nth 0 edges) left (/ w 20)) y) '(0 0 255)))
                       (should (vellumory-gui--near (funcall pixel (+ (nth 0 edges) left (- w (/ w 20))) y) '(255 0 0))))
-                    (should (shown 1))
-                    (setq finished (float-time))
+                    ;; Resized mid-way (a long message grew the echo area): the
+                    ;; wipe runs its course, and the page is fitted after it.
+                    (let ((generation vellumory-present--generation))
+                      (vellumory-present--resized (get-buffer-window presentation t))
+                      (should vellumory-present--refit)
+                      (should (= vellumory-present--generation generation))
+                      (should (shown 1))
+                      (setq finished (float-time))
+                      (should (vellumory-test-gui--wait (lambda () (> vellumory-present--generation generation))))
+                      (should-not vellumory-present--refit))
                     (should (>= (- finished started) 1.0))
                     (should-not vellumory-present--animation)
                     ;; Then the page alone, whole and clickable.
@@ -935,7 +948,7 @@ is dropped from the image cache once replaced, and the page ends alone."
                               (should (>= (- (float-time) started) (* 0.95 duration)))
                               (should-not vellumory-present--animation)
                               (should-not vellumory-present--frame)
-                              (message "%s: %d frames in %.2f s, %.2f s of it capturing (%s)"
+                              (vellumory-gui--log "%s: %d frames in %.2f s, %.2f s of it capturing (%s)"
                                        (alist-get 'style (alist-get 'transition (alist-get page vellumory-present--info)))
                                        vellumory-present--frames (- (float-time) started) blocked
                                        (if (image-type-available-p 'canvas) "canvas" "images"))
@@ -960,7 +973,7 @@ is dropped from the image cache once replaced, and the page ends alone."
                               (let ((red (cl-count '(255 0 0) colours :test #'vellumory-gui--near))
                                     (green (cl-count '(0 255 0) colours :test #'vellumory-gui--near)))
                                 (unless (= (+ red green) (length colours))
-                                  (message "blend colours seen: %S" (seq-take (seq-uniq colours) 12)))
+                                  (vellumory-gui--log "blend colours seen: %S" (seq-take (seq-uniq colours) 12)))
                                 (should (= (+ red green) (length colours)))
                                 (should (and (> red 30) (> green 30)))))))
                 ;; Red to yellow from the left: yellow on the left, red on the right.
@@ -1011,7 +1024,7 @@ lines and words through MuPDF's characters, and v $ y copies a whole line."
                 ;; it stands out from the paper, whatever the colour.
                 (unless (< (min (apply #'+ (funcall pixel (1- x) y)) (apply #'+ (funcall pixel x y))) 600)
                   ;; Where the dark caret is instead, if anywhere near.
-                  (message "caret expected at %d,%d; darkest within 40 px: %S" x y
+                  (vellumory-gui--log "caret expected at %d,%d; darkest within 40 px: %S" x y
                            (car (sort (cl-loop for dx from -40 to 40 nconc
                                                (cl-loop for dy from -40 to 40
                                                         collect (list (apply #'+ (funcall pixel (+ x dx) (+ y dy))) dx dy)))

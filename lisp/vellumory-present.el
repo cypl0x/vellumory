@@ -325,7 +325,8 @@ when the presentation's generation is no longer GENERATION."
                   (vellumory-present--draw-rows page `(((new 0 0 ,w ,h))) `((new ,image ,w ,h)) left top)
                   (vellumory-present--drop-frame)
                   (setq vellumory-present--shown (list page image w h))
-                  (vellumory-present--arm-duration page generation))
+                  (vellumory-present--arm-duration page generation)
+                  (vellumory-present--refit-after-transition))
                 (ask ()
                   ;; The frame for this moment, unless one is being made or it is over.
                   (let ((progress (/ (- (float-time) start) duration)))
@@ -409,7 +410,8 @@ when the presentation's generation is no longer GENERATION."
                      (setq vellumory-present--animation nil)
                      (vellumory-present--draw-rows page `(((new 0 0 ,w ,h))) images left top)
                      (setq vellumory-present--shown (list page image w h))
-                     (vellumory-present--arm-duration page generation))
+                     (vellumory-present--arm-duration page generation)
+                     (vellumory-present--refit-after-transition))
                     (t (vellumory-present--draw-rows
                         page (vellumory-present--compose transition progress w h) images left top)))))))))))
 
@@ -681,10 +683,24 @@ A touchpad's stream of turns changes it once per 0.3 s at most."
 (with-eval-after-load 'vellumory
   (add-to-list 'vellumory--animation-timers 'vellumory-present--animation))
 
+(defvar-local vellumory-present--refit nil
+  "Whether the window changed size during a transition, to fit it after.")
+
 (defun vellumory-present--resized (window)
-  "Show the presentation in WINDOW again, fitted to its new size."
+  "Show the presentation in WINDOW again, fitted to its new size.
+During a transition, once it ends: showing the page anew stops it, and a
+long message growing the echo area cut transitions short."
   (with-current-buffer (window-buffer window)
-    (when (buffer-live-p vellumory-present--source) (vellumory-present--show))))
+    (when (buffer-live-p vellumory-present--source)
+      (if (memq vellumory-present--animation timer-list)
+          (setq vellumory-present--refit t)
+        (vellumory-present--show)))))
+
+(defun vellumory-present--refit-after-transition ()
+  "Fit the page to its window if it changed size during the transition."
+  (when vellumory-present--refit
+    (setq vellumory-present--refit nil)
+    (vellumory-present--show)))
 
 (defun vellumory-present--cleanup ()
   "Stop the presentation's timers and delete its full-screen frames.
