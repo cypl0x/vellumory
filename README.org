@@ -645,8 +645,16 @@ sample three seconds after the last step:
 | Okular    | 191–197 MiB     | 138–197 MiB         |
 
 Vellumory now holds about what Papers does and less than Okular, and still
-15–25 MiB more than Evince.  The method and the reasons, from each reader's
-source, are in [[file:docs/reader-validation.org][docs/reader-validation.org]].
+15–25 MiB more than Evince.  On a long document the order changes: on a
+5,019-page book (54 MB), two runs each, with byte-compiled Lisp:
+
+| Viewer    | Open, first change | Open, settled | Jump, settled | Down, first change | Memory      |
+|-----------+--------------------+---------------+---------------+--------------------+-------------|
+| Vellumory | 116–180 ms         | 900–1210 ms   | 25–41 ms      | 4.8–5.1 ms         | 301–318 MiB |
+| Evince    | 211–244 ms         | 1074–1091 ms  | 38–44 ms      | 3.4–4.7 ms         | 324–325 MiB |
+
+The method and the reasons, from each reader's source, are in
+[[file:docs/reader-validation.org][docs/reader-validation.org]].
 
 ** What the numbers do not show
 :PROPERTIES:

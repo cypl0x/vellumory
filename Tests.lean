@@ -15,6 +15,19 @@ open Vellumory
 def ensure (condition : Bool) (message : String) : IO Unit :=
   unless condition do throw <| IO.userError message
 
+/-- Like `IO.FS.withTempDir`, but removing the directory never replaces the
+    body's own error: when a test fails with a worker still running, the worker
+    deletes its strips while the directory is removed (macOS CI saw that ENOENT
+    instead of the failure). One retry after a pause, then the directory stays. -/
+def withScratchDir (body : System.FilePath → IO α) : IO α := do
+  let dir ← IO.FS.createTempDir
+  try body dir
+  finally
+    try IO.FS.removeDirAll dir
+    catch _ =>
+      IO.sleep 300
+      try IO.FS.removeDirAll dir catch _ => pure ()
+
 /-- Pixel bytes of a binary PPM (after the third header newline). -/
 def ppmPixels (ppm : ByteArray) : ByteArray := Id.run do
   let mut lines := 0
@@ -54,7 +67,7 @@ def testJson : IO Unit := do
   IO.println "PASS JSON grammar, escapes, numbers, limits and round trips"
 
 def testEdit : IO Unit := do
-  IO.FS.withTempDir fun dir => do
+  withScratchDir fun dir => do
     let store : Edit.Store := { root := dir / "store" }
     let file := dir / "doc.pdf"
     let original := Fixtures.reader.toUTF8
@@ -136,7 +149,7 @@ def scannedPdf (width height : Nat) (gray : ByteArray) : String := Id.run do
 def testValidateAndOcr : IO Unit := do
   ensure (Validate.contextPage "root/document[0]/pages[12](3 0 obj PDPage)/x" == some 12) "context page"
   ensure (Validate.contextPage "root/document[0]/metadata" == none) "context without page"
-  IO.FS.withTempDir fun dir => do
+  withScratchDir fun dir => do
     let file := dir / "doc.pdf"
     IO.FS.writeFile file Fixtures.reader
     let report ← Validate.run file.toString "2b"
@@ -206,7 +219,7 @@ def testMetadata : IO Unit := do
   ensure (rejects #[] #[] "" && rejects #[("colour", "red")] #[] "" && rejects #[("title", "")] #[] "" &&
     rejects #[("language", "en GB")] #[] "" && rejects #[("display-title", "yes")] #[] "" &&
     rejects #[("title", "a")] #["title"] "" && rejects #[("title", "a")] #[] "yesterday") "validation"
-  IO.FS.withTempDir fun dir => do
+  withScratchDir fun dir => do
     -- A document without Info dictionary or XMP packet.
     let doc := dir / "doc.pdf"
     IO.FS.writeFile doc Fixtures.reader
@@ -292,7 +305,7 @@ def testMetadata : IO Unit := do
   IO.println "PASS metadata: dates, Info/XMP/catalog consistency, removal, undo, determinism; PDF/UA rules fixed; PDF/A-1b, -2b, -4f kept; PDF 2.0 in XMP only"
 
 def testAssociatedFiles : IO Unit := do
-  IO.FS.withTempDir fun dir => do
+  withScratchDir fun dir => do
     let some fixture ← IO.getEnv "VELLUMORY_PDFA4_FIXTURE"
       | throw <| IO.userError "VELLUMORY_PDFA4_FIXTURE is not set (nix develop provides it)"
     let store : Edit.Store := { root := dir / "store" }
@@ -368,7 +381,7 @@ def testAssociatedFiles : IO Unit := do
   IO.println "PASS associated files: relationship, MIME type, /AF; replaced and removed files leave nothing behind; PDF/A-4f and PDF/UA-2 kept; PDF/A-1 and -2 refuse non-PDF/A attachments"
 
 def testStampAndEncryption : IO Unit := do
-  IO.FS.withTempDir fun dir => do
+  withScratchDir fun dir => do
     let store : Edit.Store := { root := dir / "store" }
     let doc := dir / "doc.pdf"
     let stamp := dir / "stamp.pdf"
@@ -411,7 +424,7 @@ def testStampAndEncryption : IO Unit := do
   IO.println "PASS stamps and underlays; AES-256 encryption without recorded or exposed passwords; decryption"
 
 def testAnnotations : IO Unit := do
-  IO.FS.withTempDir fun dir => do
+  withScratchDir fun dir => do
     -- Clockwise from the upper left, as selection and search quads are.
     let quads := #[42.0, 179.1, 300.0, 179.1, 300.0, 195.6, 42.0, 195.6]
     let highlight : Edit.Operation := .annotate 1 "Highlight" quads #[] #[1, 0.85, 0.2] "Line 1" "Reader" 1793166790
@@ -512,7 +525,7 @@ def testSignatures : IO Unit := do
     env := #[("SSL_CERT_FILE", some s!"{fixture}/cert.pem")] }
   ensure ((trusted.stdout.splitOn "\"trusted\":true").length == 2) s!"trusted with its certificate: {trusted.stdout}"
   -- An edit rewrites the file, which breaks the signature; undo brings it back.
-  IO.FS.withTempDir fun dir => do
+  withScratchDir fun dir => do
     let doc := dir / "signed.pdf"
     IO.FS.writeBinFile doc signedBytes
     let store : Edit.Store := { root := dir / "store" }
@@ -539,7 +552,7 @@ def testForms : IO Unit := do
   let fields ← fieldsOf original
   ensure (fields.size == 4 && valueOf fields "agree" == some "Off" && valueOf fields "reference" == some "R-17")
     s!"form fields: {(Json.arr fields).compress}"
-  IO.FS.withTempDir fun dir => do
+  withScratchDir fun dir => do
     let doc := dir / "form.pdf"
     IO.FS.writeBinFile doc original
     let store : Edit.Store := { root := dir / "store" }
@@ -589,7 +602,7 @@ def testDiff : IO Unit := do
   -- Over budget the script is coarse but still exact.
   let coarse := Diff.diff id (words "a b c") (words "a x c") (budget := 0)
   ensure (Diff.olds coarse == ["a", "b", "c"] && Diff.news coarse == ["a", "x", "c"]) "coarse script exact"
-  IO.FS.withTempDir fun dir => do
+  withScratchDir fun dir => do
     let old := dir / "old.pdf"
     let new := dir / "new.pdf"
     IO.FS.writeFile old Fixtures.reader
@@ -675,7 +688,7 @@ def testShell : IO Unit := do
     pure false
   catch _ => pure true
   ensure nulRejected "NUL argument accepted"
-  IO.FS.withTempDir fun dir => do
+  withScratchDir fun dir => do
     let value ← Shell.run <| Shell.inDirectory dir <| Shell.withEnv "VELLUMORY_TEST_VALUE" "a b" <|
       Shell.checked (command% self.toString ["--echo-context"])
     ensure (value.stdout.trimAscii.toString ==
@@ -707,7 +720,7 @@ def testPdf : IO Unit := do
   ensure ((Pdf.checkMarker ByteArray.empty).isNone) "empty marker accepted"
   ensure ((Pdf.checkMarker "hello".toUTF8).isNone) "non-PDF marker accepted"
   ensure (Pdf.qpdfStatus 3 == .warnings) "warnings promoted to clean"
-  IO.FS.withTempDir fun dir => do
+  withScratchDir fun dir => do
     let good := dir / "--literal ; $() λ.pdf"
     IO.FS.writeFile good pdfFixture
     let before ← IO.FS.readBinFile good
@@ -740,7 +753,7 @@ def testCli : IO Unit := do
     ensure (result.exitCode != 0) "invalid CLI input accepted"
   -- A document named like a page range is a document: given to qpdf
   -- positionally, 2-3 would select pages 2 and 3 of the file before it.
-  IO.FS.withTempDir fun dir => do
+  withScratchDir fun dir => do
     IO.FS.writeFile (dir / "doc.pdf") Fixtures.reader
     IO.FS.writeFile (dir / "2-3") Fixtures.reader
     let pages (name : String) : IO Nat := do
@@ -1002,7 +1015,7 @@ def testNative : IO Unit := do
   ensure (gone == ["b"] && store.order.map (·.1) == ["a", "c"] && store.total == 8) "LRU eviction"
   let (store, gone) := store.touch "huge" 50
   ensure (store.order.map (·.1) == ["huge"] && gone.length == 2) "oversized entry retained alone"
-  IO.FS.withTempDir fun dir => do
+  withScratchDir fun dir => do
     let path := dir / "fixture.pdf"
     IO.FS.writeBinFile path bytes
     let (opened, _) ← Worker.openFile (Json.mkObj [("path", toJson path.toString)])
@@ -1026,7 +1039,7 @@ def testNative : IO Unit := do
     acknowledged, and replies may arrive out of order. -/
 def testWorkerProtocol : IO Unit := do
   let app := (← IO.appPath).parent.get! / "vellumory"
-  IO.FS.withTempDir fun dir => do
+  withScratchDir fun dir => do
     let pdf := dir / "reader.pdf"
     IO.FS.writeFile pdf Fixtures.reader
     let child ← IO.Process.spawn {
@@ -1084,7 +1097,7 @@ def testWorkerProtocol : IO Unit := do
     their content address; sharp strips stay in the session's runtime directory. -/
 def testPersistentRasters : IO Unit := do
   let app := (← IO.appPath).parent.get! / "vellumory"
-  IO.FS.withTempDir fun dir => do
+  withScratchDir fun dir => do
     let pdf := dir / "doc.pdf"
     IO.FS.writeFile pdf Fixtures.reader
     let opened : IO.Ref (Array Json) ← IO.mkRef #[]
@@ -1174,7 +1187,7 @@ def testRuntimeSweep : IO Unit := do
   ensure (!(← Native.processAlive 999999999)) "a process with PID 999999999 is seen running"
   ensure (!(← Native.processAlive 0)) "PID 0 is seen as a worker"
   let app := (← IO.appPath).parent.get! / "vellumory"
-  IO.FS.withTempDir fun dir => do
+  withScratchDir fun dir => do
     let parent := dir / "vellumory"
     let stale := parent / "worker-999999999-1"
     IO.FS.createDirAll stale
@@ -1231,7 +1244,7 @@ def testReflow : IO Unit := do
     s!"its text: {text.take 80}"
   ensure (!(← Native.reflowable (← Native.openDocument Fixtures.reader.toUTF8 ""))) "a PDF does not"
   -- Through the worker: the layout is part of a reflowed document's identity.
-  IO.FS.withTempDir fun dir => do
+  withScratchDir fun dir => do
     let pdf := dir / "doc.pdf"
     IO.FS.writeFile pdf Fixtures.reader
     let app := (← IO.appPath).parent.get! / "vellumory"
@@ -1262,7 +1275,7 @@ def testReflow : IO Unit := do
   IO.println "PASS reflow: EPUB laid out by page size, text size and user stylesheet; layout part of its identity"
 
 def testCompose : IO Unit := do
-  IO.FS.withTempDir fun dir => do
+  withScratchDir fun dir => do
     let reader := dir / "reader.pdf"
     let long := dir / "long.pdf"
     let turned := dir / "turned.pdf"
@@ -1357,7 +1370,7 @@ def testTransitionFrames : IO Unit := do
   ensure ((fly.getObjValAs? String "direction").toOption == some "None" &&
       (fly.getObjValAs? Float "scale").toOption == some 0.25 && (fly.getObjValAs? Bool "opaque").toOption == some true &&
       (fly.getObjValAs? String "motion").toOption == some "O") s!"Fly /Trans: /Di /None, /SS, /B: {fly.compress}"
-  IO.FS.withTempDir fun dir => do
+  withScratchDir fun dir => do
     let (w, h) := (960, 540)
     let header := s!"P6\n{w} {h}\n255\n"
     let plain (value : UInt8) : ByteArray := header.toUTF8 ++ ⟨Array.replicate (w * h * 3) value⟩
@@ -1484,7 +1497,7 @@ def testTransitionFrames : IO Unit := do
 
 def testWorkerDocuments : IO Unit := do
   let app := (← IO.appPath).parent.get! / "vellumory"
-  IO.FS.withTempDir fun dir => do
+  withScratchDir fun dir => do
     let first := dir / "first.pdf"
     let second := dir / "second.pdf"
     IO.FS.writeFile first Fixtures.reader
