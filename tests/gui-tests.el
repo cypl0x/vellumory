@@ -420,12 +420,18 @@ macOS goes full screen late and animated, reporting the new size as its zoom
 starts, so a second more there.  A presentation refits its page when its
 frame grows, which stops a transition under way: transitions are timed only
 after this.  (Without a window manager the frame never grows: 5 s, then on.)"
-  (let ((deadline (+ (float-time) 5)) (edges nil)
-        (monitor (nth 2 (alist-get 'geometry (frame-monitor-attributes frame)))))
+  (let* ((started (float-time))
+         ;; Right after another presentation left full screen, macOS took
+         ;; more than 5 s to enter it again.
+         (deadline (+ started (if (eq window-system 'ns) 15 5))) (edges nil)
+         (monitor (nth 2 (alist-get 'geometry (frame-monitor-attributes frame)))))
     (while (and (< (float-time) deadline)
                 (not (and (equal edges (setq edges (frame-edges frame 'native-edges)))
                           (>= (- (nth 2 edges) (nth 0 edges)) monitor))))
       (vellumory-gui--pause 0.3))
+    (vellumory-gui--log "full screen %s after %.1f s: %S"
+                        (if (>= (- (nth 2 edges) (nth 0 edges)) monitor) "reached" "not reached")
+                        (- (float-time) started) edges)
     (when (eq window-system 'ns) (vellumory-gui--pause 1))))
 
 (defun vellumory-gui--log (format-string &rest args)
