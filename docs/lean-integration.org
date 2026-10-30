@@ -1,0 +1,149 @@
+#+title: Lean, PDF, and Emacs integration research
+#+date: 2026-10-27
+
+* Decisions
+The application tooling, build driver, tests, process orchestration and
+PDF worker are Lean 4. No Python, Perl, shell scripts, sed or awk implement
+project logic. Nix describes dependencies and launches a Lean build driver.
+Dependency build systems may internally use their own upstream shell machinery.
+The Emacs UI remains native Emacs Lisp unless an explicitly scoped generator
+proves useful. The initial Python worker has been removed, not ported in full.
+
+* CLI and scripting DSL
+[[https://github.com/leanprover/lean4-cli][lean4-cli]] provides a command declaration DSL, typed flags and arguments,
+subcommands, generated help, validation and command handlers. Its v4.30.0 tag
+resolves to 6b907cf12b2e445ccb7c24bc208ef04a1f39e84c. That is pinned in flake.nix,
+matching the locked nixpkgs Lean 4.30.0. This is a compatible toolchain choice,
+not a claim that 4.30 is the newest Lean release.
+
+[[https://github.com/jonaprieto/lean-argus][lean-argus]] is another particularly relevant candidate: a typed options DSL,
+derived help and completion, value grammars, and subcommands. Its inspected
+README targets Lean 4.33.1 and lists Grip and several terminal libraries as
+dependencies. It deserves reassessment if generated completions or typed option
+records outweigh the existing CLI's simpler dependency set.
+
+[[https://lean-lang.org/doc/reference/latest/Build-Tools-and-Distribution/Lake/][Lake]] supports Lean scripts and build tasks. Searches for Lean shell DSLs did
+not identify a maintained general-purpose library appropriate to this project.
+We therefore introduce a small embedded DSL: command% executable [arguments].
+Lean do-notation sequences operations; scoped combinators supply cwd/environment;
+capture returns exit status/stdout/stderr and checked propagates failures.
+Arguments are vectors passed directly to IO.Process, never shell source strings.
+Streaming pipelines, cancellation and resource limits remain to be added.
+
+* Existing PDF integration in Lean
+Searches included quoted Lean/MuPDF/Poppler/PDF combinations, Reservoir-indexed
+results and GitHub repository search. On this date, GitHub's
+=pdf language:Lean= query returned 28 repositories; their descriptions concerned
+papers/proofs distributed as PDFs, not a PDF document library. =poppler lean=
+returned zero; =mupdf lean= returned an unrelated Windows application. These are
+limited discovery results, not a proof that no bindings exist.
+
+| Candidate | Integration route | What it provides | Proof boundary |
+|-----------+-------------------+------------------+----------------|
+| [[https://mupdf.readthedocs.io/en/latest/reference/c/index.html][MuPDF C API]] | Lean C ABI with a small shim | Rendering, display lists, clipping, document APIs | Engine and shim remain trusted |
+| [[https://qpdf.readthedocs.io/en/stable/json.html][qpdf JSON v2]] | Direct argv process or C API | PDF object graph import/export, structural operations | Parser output is external evidence |
+| [[https://docs.verapdf.org/validation/][veraPDF]] | Direct process; parse reports in Lean | PDF/A, PDF/UA, WTPDF validation | Report is not a Lean theorem; UA has human checks |
+| [[https://github.com/pdf-association/arlington-pdf-model][Arlington PDF Model]] | Translate selected declarative predicates | Versioned PDF object constraints | Model translation and ISO correspondence need review/proof |
+| [[https://github.com/GaloisInc/daedalus/tree/master/formats/pdf][DaeDaLus PDF]] | Reference grammar and differential oracle | Existing format description/parser work | Not a Lean library or kernel-checked proof |
+
+MuPDF's C interface plus Lean's [[https://lean-lang.org/doc/reference/latest/Run-Time-Code/Foreign-Function-Interface/][FFI]] can replace PyMuPDF without Python.
+The implemented reader keeps rendering in a worker process for crash isolation.
+A small C ABI bridge owns immutable document bytes and MuPDF handles, contains
+MuPDF exceptions, retains four page display lists, renders clipped RGB strips,
+and exposes dimensions/text/outline/page labels/SHA-256 to Lean. Request handling, validation,
+content-addressed raster caching and process orchestration are Lean. Cancellation
+currently replaces queued requests; an in-flight MuPDF render runs to completion.
+The C bridge and renderer remain outside the kernel-checked proof boundary.
+
+Search uses MuPDF 1.27.2's structured-text iterator to return grouped text
+polygons, with case-sensitive or insensitive literal matching. The inspected
+[[https://github.com/ArtifexSoftware/mupdf/blob/1.27.2/source/fitz/stext-search.c][upstream callback convenience wrapper]] indexes beyond the polygon array when
+passing page metadata, and ignores the callback's stop result. Calling the
+documented iterator directly avoids that wrapper and permits an explicit hit
+limit. Native tests cover case folding, accented text, multiline grouping,
+rotated/cropped coordinates and exact/overflow limits. The engine normalizes
+text; these are not byte-string matches and do not cross page boundaries.
+
+[[https://github.com/vedang/pdf-tools/blob/master/lisp/pdf-isearch.el][pdf-tools' isearch integration]] illustrates the additional Emacs search-state,
+wrap and restore hooks needed for full native isearch behavior. The current
+Vellumory command uses an asynchronous minibuffer preview instead; implementing
+those native hooks remains part of the goal. Emacs' built-in =svg-embed= and
+=svg-polygon= were inspected via the live Emacs 32.0.50 documentation. Transient
+SVG composition overlays match polygons on existing PNG strips. It does not
+modify source files or add search-specific PNGs to the raster cache.
+
+qpdf's complete object representation requires stream data to be requested.
+Do not call a summary-only JSON import a complete or byte-preserving PDF model.
+qpdf status 3 means warnings; the initial Lean CLI preserves that distinction.
+
+* What could be proved
+1. Reader algorithms: visible-region bounds, strip coverage/nonoverlap, bounded
+   pending queues, generation freshness, navigation bounds, page coordinate
+   conversion, cache identity including all rendering inputs.
+2. Editing over a formal document model: permutation preserves page identities
+   and count; split/merge laws; object references remain resolved; undo restores
+   the exact previous model; commit cannot advance from a stale parent revision.
+3. Selected file properties: a parser/checker returns evidence that object IDs,
+   offsets, stream lengths or page-tree relationships satisfy stated predicates.
+   For claims about actual bytes, parser soundness and decoding must be covered.
+4. Selected PDF/A or PDF/UA machine rules: formalize explicit versioned rules and
+   prove checker soundness. Full ISO compliance requires a complete formalization
+   and a reviewed mapping from the standard, not merely passing a test corpus.
+
+The supplied proof seed covers integer strip clipping, split coverage/nonoverlap,
+argument-vector preservation at the pure process boundary, and soundness of a
+five-byte PDF marker check. Two additional theorems cover a checked page-index
+function used by the worker's outline replies: accepted indices are in bounds,
+and valid indices are preserved. Their premise still trusts the foreign page
+count; they do not prove extraction or destination coordinates correct.
+The marker check deliberately accepts malformed PDFs
+with the right prefix; the integration test demonstrates this. It proves neither
+PDF validity nor even a complete PDF header. There is no current end-to-end PDF
+conformance proof or rendering-correctness theorem.
+
+The next high-value proof is a versioned PDF object model with checked object
+references and page permutations; the next reader proof is stale-result rejection
+in the real scheduler, which is currently Elisp and regression-tested. Both must be used by runtime
+code rather than remain disconnected models.
+
+* Trust and evidence
+- A theorem over an AST produced by qpdf is conditional on correct extraction.
+  A future native Lean parser plus soundness theorem can reduce that assumption.
+- A foreign renderer does not inherit Lean's proofs. C shim ownership, MuPDF
+  exception containment and cancellation need dedicated integration tests.
+- Hash equality is not an unconditional theorem of byte equality. Store actual
+  immutable bytes and state collision assumptions explicitly where necessary.
+- Pixel-perfect preservation under compression needs a defined semantic model;
+  raster comparisons alone do not cover tags, attachments, signatures or text.
+- Kernel proofs should avoid sorry, custom axioms and native_decide. The audit
+  inspects elaborated theorem dependencies. Compiled execution still trusts Lean's
+  compiler/runtime, the OS and hardware; FFI/external tools add further trust.
+- Accessibility includes meaningful reading order and alternative descriptions.
+  Some of this requires human judgment, as veraPDF itself documents.
+
+* Emacs, Nael, and extraction
+[[https://codeberg.org/mekeor/nael][Nael]] is a refactored fork of lean4-mode oriented toward native Emacs facilities.
+The current [[https://github.com/emacsmirror/nael][upstream mirror]] documents Eglot with Lean-specific extensions, ElDoc goals,
+Project/Lake builds, Abbrev/Skeleton Unicode insertion and optional nael-lsp.
+It is a strong development-environment candidate, and is included in the flake's
+development dependencies. No global user Emacs configuration has been changed.
+The browser could not read Codeberg, so its source mirror was inspected instead.
+The README has inconsistent release dates; no claim of chronologically "latest"
+among all integrations is based on those dates.
+
+[[https://github.com/leanprover-community/lean4-mode][lean4-mode]] remains an alternative. [[https://github.com/0xAX/ob-lean][ob-lean]] supports Org Babel. These integrate
+editing/evaluating Lean in Emacs; they do not compile Lean definitions to Elisp.
+Searches found no established Lean-to-Elisp extractor or Emacs extension DSL.
+
+Two technically viable runtime designs are:
+- Compiled Lean process with asynchronous structured messages and a thin Elisp
+  UI. This is the initial choice for the PDF application.
+- Lean compiled code with a small C shim implementing [[https://www.gnu.org/software/emacs/manual/html_node/elisp/Dynamic-Modules.html][Emacs dynamic modules]].
+  This is feasible from the documented ABIs, not an existing binding found here.
+  It adds in-process lifetime, GC, thread-affinity and failure-isolation concerns.
+
+A restricted Lean DSL could emit Elisp command declarations, menus, keymaps or
+protocol codecs. That would be code generation. To preserve semantic proofs
+through extraction, define the source and target semantics and prove that the
+translation preserves the relevant behavior. Arbitrary Lean code does not
+become verified Elisp merely by printing Lisp forms.

@@ -1,0 +1,371 @@
+#+title: Reader validation
+#+date: 2026-10-28
+
+* Rendering pipeline (protocol 2)
+Emacs sends JSON lines to a per-buffer Lean worker. Each open copies the
+document's bytes into a MuPDF document (PDF, XPS, EPUB, CBZ, FB2, images),
+hashed with OpenSSL SHA-256 on a separate thread while MuPDF parses.
+
+- Page boxes come from page-tree attributes (=pdf_page_obj_transform=), no
+  content or annotation parsing; =loadedPageSizes= cross-checks them in tests.
+- Rendering runs on N dedicated threads (default min(6, cores − 2)), each
+  borrowing a cloned MuPDF context. Document access holds =doc_lock=; display
+  lists (LRU of 24) are replayed concurrently. Threads waiting for the same
+  page reuse the first thread's list instead of rebuilding it.
+- Each request has a MuPDF cookie: =cancel= removes queued work and aborts
+  running renders; aborted lists are never cached.
+- Strips and tiles are written as raw binary PPM to a per-worker tmpfs
+  directory (=$XDG_RUNTIME_DIR=), LRU-bounded (128 MiB since 2026-10-30, 512 before) and removed on exit.
+  No PNG encoding anywhere on the hot path.
+- Highlights (search, selection, link hints) and page recolouring (theme tint,
+  luminance inversion) are composited by MuPDF into the raster; the raster key
+  includes them, so clearing returns to cached plain tiles with zero new pixels.
+- The queue is a proved priority queue (=Vellumory/Scheduler.lean=): pop
+  returns a minimal element and a permutation of the rest; cancellation keeps
+  no cancelled id and loses no job.
+
+Emacs side:
+- Pages are rows of tiles (one tile per row at fit width; 640 px tiles beyond
+  the window width). Only tiles intersecting a window are rendered sharp, at
+  device resolution (=frame-scale-factor=), displayed at logical size.
+- Up to threads + 1 requests in flight, ordered from a reading focus line at
+  30% of the window height; obsolete requests are cancelled immediately.
+- Adaptive refocus: while moving, tiles whose estimated raster cost exceeds
+  14 ms get a whole-page preview (sliced into every strip) and refocus after
+  0.09 s of rest. Cost is learned from pure raster time per megapixel, kept
+  separate from list-building time (a preview needs the same display list,
+  so it never helps with interpretation cost). Jumps render sharp at once.
+- Idle prefetch: one viewport ahead and half behind in the direction of motion.
+- Decoded images are kept within 2 screens of a window and released beyond.
+- Visiting a document reads no bytes into the buffer (a narrowly scoped
+  =insert-file-contents= handler); saving can never write the layout.
+
+* Comparative measurements
+Command: =lean --run scripts/Build.lean lake env lean --run scripts/Review.lean bench target/corpus/pdf32000-2008.pdf=
+(=tests/bench.el=). Host: AMD Ryzen 5 3600 (12 threads), private Xvfb :7 1280×1024,
+Emacs 32.0.50 pgtk (emacs-git-pgtk 20260808, emacs -Q, byte-compiled code), windows
+800×660 and 880×700,
+ISO 32000-1:2008 (756 pages, 22 MB). pdf-tools 20260102.1101 from the pinned
+nixpkgs, fit width; DocView with =doc-view-continuous=. "Blocking" is main
+thread time for the command plus a forced redisplay; "sharp" is the time until
+every visible tile is final. Ranges over consecutive runs, each in a freshly
+started daemon:
+
+| Metric                            | Vellumory         | emacs-reader     | pdf-tools roll    | pdf-tools         | DocView      |
+|-----------------------------------+-------------------+------------------+-------------------+-------------------+--------------|
+| Open → visible sharp              | 136–166 ms        | 160–178 ms       | 171–183 ms        | 504–605 ms        | 1145–1163 ms |
+| Jump to p. 300: blocking          | 0.8–4.2 ms        | 68–72 ms         | 49–61 ms          | 63–92 ms          | 7.7–8.9 ms   |
+| Jump to p. 300: sharp             | 12–80 ms          | = blocking       | = blocking        | = blocking        | 211–213 ms   |
+| Reading scroll (40×96 px) mean    | 1.1–1.6 ms        | 7.8–9.3 ms       | 5.4–7.5 ms        | 7.6–11.5 ms       | —            |
+| Reading scroll p50                | 0.5–0.8 ms        | 1.9–2.3 ms       | 1.2–2.5 ms        | 0.9–1.4 ms        | —            |
+| Reading scroll p95                | 5.7–9.0 ms        | 52–55 ms         | 43–51 ms          | 52–89 ms          | —            |
+| Reading scroll max                | 9.8–12.9 ms       | 53–61 ms         | 48–63 ms          | 62–94 ms          | —            |
+| Fast scroll (40×300 px) p50 / max | 0.5–0.8 / 2.1–4.0 | 2.0–2.3 / 59–65  | 1.0–1.8 / 56–68   | 2.3–2.4 / 76–88   | —            |
+
+emacs-reader (the Emacs Reader, a MuPDF dynamic module presented at EmacsConf
+2025, codeberg.org/MonadicSheep/emacs-reader at 4fca3aa, built by the flake
+against the same MuPDF) is driven through its synchronous commands
+(=reader--non-queue-scroll-down-or-next-page=, =reader-goto-page=) at fit
+width; its queued commands would return before doing the work. It shows one
+page at a time, continuing onto the next as its =C-n= does. Runs 2–4 of four;
+run 1 followed a rebuild of the development shell and is left out (Vellumory
+opened in 329 ms there; every other value was in these ranges).
+
+Measured 2026-10-28 on byte-compiled Lisp in a freshly started review daemon
+for each run (interpreted Lisp roughly doubles layout and redisplay work and
+makes these numbers meaningless). Interpretation: Vellumory opens about as fast
+as the fastest other (emacs-reader; the ranges overlap) while laying out all
+756 pages, a jump blocks input for under 5 ms (others 49–92 ms), its median
+reading step is below every other reader's, and its worst reading step (13 ms)
+is below their 95th percentile.
+
+** A short document: tracemonkey.pdf (14 pages, 2026-10-28)
+Same harness; the jump goes to the last page and the scrolling starts from the
+first (from the last there is nothing to scroll: an earlier run measured
+no-ops for every reader). Three runs:
+
+| Metric                            | Vellumory         | emacs-reader     | pdf-tools roll    | pdf-tools          | DocView    |
+|-----------------------------------+-------------------+------------------+-------------------+--------------------+------------|
+| Open → visible sharp              | 77–90 ms          | 154–169 ms       | 71–86 ms          | 408–449 ms         | 490–516 ms |
+| Jump to the last page: blocking   | 3.1–3.5 ms        | 82–87 ms         | 47–50 ms          | 80–86 ms           | 137–146 ms |
+| Reading scroll mean / max         | 1.2–1.5 / 12–15   | 8.0–10.3 / 66–73 | 7.4–10.5 / 61–99  | 12–16 / 92–112     | —          |
+| Fast scroll mean / max            | 1.3–2.0 / 16–31   | 7.2–11.5 / 64–72 | 20–22 / 217–268   | 14–18 / 208–271    | —          |
+
+Opening a short document, Vellumory and pdf-tools roll are level (their ranges
+overlap); every other row is Vellumory's by a factor of 4 to 25.
+
+** On the screen, every viewer that runs (2026-10-29)
+The benchmarks above time Emacs; EAF's PDF viewer (nixpkgs eaf-pdf-viewer,
+PyMuPDF in a Qt window over the Emacs frame) draws outside it. So the same
+reading is timed on the display: =Review.lean screenbench= runs
+=tests/screen-bench.el= in each viewer, in a fresh Emacs on a private Xvfb, while
+ffmpeg records 640 × 480 of the page area at 200 frames a second as timestamped
+checksums; an action's latency is its start to the first changed frame, and it
+has settled at the last change before the next action (=--steps= lists every
+step with Emacs's collection count). Script: open tracemonkey, jump to pages 5,
+12 and 3, thirty 96-pixel reading steps; frame 1280 × 1000. All viewers in the
+same Emacs, 31.1 built for X (EAF's, which it needs), two runs (pdf-tools with
+the vimura server: three):
+
+| Viewer                | Open: settled | Jump: settled | Step: median | Step: worst |
+|-----------------------+---------------+---------------+--------------+-------------|
+| Vellumory             | 64–72 ms      | 30–36 ms      | 3.7–4.3 ms   | 6.1–6.6 ms  |
+| emacs-reader          | 186–223 ms    | 64–66 ms      | 4.0–4.2 ms   | 39–42 ms    |
+| pdf-tools             | 547–583 ms    | 144 ms        | 5.5–5.6 ms   | 145–150 ms  |
+| pdf-tools roll        | 489–510 ms    | 133–153 ms    | 5.7–6.2 ms   | 142–159 ms  |
+| pdf-tools, vimura     | 887–986 ms    | 392–477 ms    | 4.4–4.6 ms   | 442–539 ms  |
+| DocView               | 466–496 ms    | 205–207 ms    | 3.2–4.1 ms   | 709–753 ms  |
+| doc-tools             | 1155–1172 ms  | 363–381 ms    | 4.0–4.3 ms   | 7.0–9.5 ms  |
+| EAF                   | 676–759 ms    | 81–93 ms      | 9.3–9.6 ms   | 50–58 ms    |
+
+Vellumory's first change comes sooner still (open 7–9 ms, jump 5–7 ms: the
+previous page or a preview, then sharp). Median steps within Emacs are level
+(differences below the 5 ms frame interval); EAF's are 2.5 times longer.
+doc-tools' steps are smooth because it renders every page to a PNG when the
+file opens (=mutool draw=, hence its second to open). With the vimura server
+(PyMuPDF 1.19.6 of nixos-22.05; PyMuPDF 1.27 refuses the extensionless file it
+saves each page to), in the two runs listed step by step, the steps that went
+on to a new page (the 8th, 16th and 24th) took 137–539 ms, the others 1.5–26
+ms. Before reading
+deferred garbage collection, Vellumory's worst step was 6.1–18 ms (one or two
+collections in some runs; see below). The pinned pgtk Emacs 32, forced onto
+X11, added about 8 ms to every Emacs viewer's step (Vellumory 11.8–12.5 ms
+there, EAF's own Emacs 9.7 ms): that is pgtk's GTK path on X11, not the
+viewers. Under Wayland, pgtk's own display, no screen recording was made
+(x11grab sees X only).
+
+The same on the pinned Emacs 32.0.50 pgtk (the author's ThinkPad runs that
+version; here forced onto X11 under Xvfb, since x11grab records X only; EAF
+keeps its own Emacs 31.1), two runs:
+
+| Viewer                | Open: settled | Jump: settled | Step: median | Step: worst |
+|-----------------------+---------------+---------------+--------------+-------------|
+| Vellumory             | 132–162 ms    | 35–37 ms      | 11.8–13.7 ms | 19.9 ms     |
+| emacs-reader          | 192–194 ms    | 69–71 ms      | 11.8–13.8 ms | 50–52 ms    |
+| pdf-tools             | 508–558 ms    | 126–155 ms    | 11.7–12.5 ms | 171–185 ms  |
+| pdf-tools roll        | 481–531 ms    | 160–170 ms    | 13.9–14.1 ms | 158–179 ms  |
+| pdf-tools, vimura     | 865–1018 ms   | 389–446 ms    | 11.6–13.6 ms | 447–452 ms  |
+| DocView               | 249–568 ms    | 196–215 ms    | 15.1–17.6 ms | 692–723 ms  |
+| doc-tools             | 1127–1183 ms  | 388–430 ms    | 12.5–14.0 ms | 144–146 ms  |
+| EAF (its Emacs 31.1)  | 718–836 ms    | 80–83 ms      | 9.0–10.0 ms  | 50–61 ms    |
+
+pgtk on X11 adds about 8 ms to every Emacs viewer's median step, and here
+Vellumory's first change on opening comes after 67 ms instead of 7–9 ms;
+EAF's Qt window does not go through it. The order otherwise holds.
+
+Running them took: doc-tools without the loads of its author's paths
+(=/home/dalanicolai/git/…=) and with its 96-pixel step set; the vimura fork with
+image-roll of May 2022, its autoloads generated, its annotation mode left off
+(its pdf-annot.el has a =cl-case= clause Emacs 31 rejects), a Python whose
+wrapper permits the user site and an environment without the dev shell's
+=PYTHONNOUSERSITE= and =PYTHONPATH=. None of their code was changed. Not run:
+epdf and yapdf (neither displays a file), appine (macOS only), etaf-reader
+(text, no pages drawn): see docs/research.org.
+
+** Desktop readers on the same screen (2026-10-30)
+GNOME's Papers 50.2 and Evince 48.4 and KDE's Okular 26.08.0 (pinned nixpkgs,
+poppler 26.06.0, GTK 4.22.4 / 3.24.52, Qt 6.11.2) read the same documents on a
+private Xvfb (:19, 1280 × 1024), recorded as above. They run no Lisp, so
+=Review.lean screenbench --keys= gives every viewer, Vellumory too, the reading as
+X input: open; jump to pages 5, 12, 3 through the page prompt (Vellumory =M-g g=,
+Papers and Evince =C-l=, Okular the page number in its toolbar: an instant jump,
+where its =C-g= dialog animates for 200 ms); 30 Down keys 0.3 s apart; 30 wheel
+notches 0.6 s apart. Command:
+=Review.lean screenbench --keys --runs 5 --only vellumory,papers,evince,okular FILE EMACS=.
+One xdotool reads the commands from its standard input, a mark is taken just
+before each line is written (a new xdotool per input took 15–20 ms to start
+here). Equal conditions: a 1280 × 1000 window at the top left, fit width, no
+sidebar; pages 1246–1264 px wide on screen. Vellumory now runs with
+=vellumory-show-thumbnails= and =vellumory-follow-document-display= off (the
+tables above had its thumbnail sidebar, the page fit to a narrower window).
+Each desktop reader starts in a fresh home on a private session bus: GSettings
+keyfile backend (Papers' window size), Evince's window from =window-ratio=,
+which needs GNOME's metadata store (=VELLUMORY_GVFS=, =SERVICES:MODULES=:
+gvfs's share/ and a directory with only its libgvfsdbus.so; without it Evince
+is resized after it maps), Okular's okularrc, okularpartrc (=ShowOSD=false=) and
+okularstaterc. A discarded warm-up pass came first (Okular's first start: 1.3
+s). The Emacs is X11 (EAF's 31.1, Lucid), Lisp byte- and natively compiled,
+its own =XDG_CACHE_HOME=. Ranges over runs of each run's median (worst: the
+largest first change); CPU is user + system of the viewer's processes (Emacs
+and its worker) over the 60 steps; RSS after them (VmHWM in parentheses where
+higher). The recording sees 5 ms frames: a first change of 3–5 ms means the
+first frame after the input.
+
+tracemonkey.pdf, five runs (Down / wheel: Vellumory 64 / 80 px, Papers 94 / 96,
+Evince 95 / 97, Okular 100 / 100; "=": settled at the first change):
+
+| Viewer          | Open: first / settled | Jump: settled | Down: first, worst / settled | Wheel: first, worst / settled | CPU, 60 steps | RSS          |
+|-----------------+-----------------------+---------------+------------------------------+-------------------------------+---------------+--------------|
+| Vellumory       | 81–121 / 131–166 ms   | 19.5–25.1 ms  | 3.1–4.9, 6.2–23.6 / = ms     | 3.7–4.2, 5.6–7.5 / = ms       | 160–330 ms    | 211–218 MiB  |
+| Vellumory, pgtk | 70–160 / 126–230 ms   | 22.6–28.4 ms  | 3.7–5.2, 8.3–25.5 / = ms     | 4.1–4.9, 6.9–20.5 / = ms      | 290–820 ms    | 223–229 MiB  |
+| Papers          | 260–340 / 395–455 ms  | 34.9–53.9 ms  | 34.7–41.6, 41–49 / 195–203   | 15.5–21.1, 24–28 / =          | 4300–5160 ms  | 166–181 (185) MiB |
+| Evince          | 213–274 / 348–413 ms  | 21.1–40.8 ms  | 3.9–5.0, 5.9–15.2 / =        | 3.5–4.6, 6.1–6.4 / =          | 180–210 ms    | 143–144 MiB  |
+| Okular          | 242–285 / 327–375 ms  | 52.7–56.8 ms  | 19.8–21.3, 23–24 / 117–118   | 19.8–22.4, 22–36 / 117–118    | 820–1030 ms   | 192–194 MiB  |
+
+pdf32000-2008.pdf (756 pages), three runs:
+
+| Viewer    | Open: first / settled | Jump: settled | Down: first, worst | Wheel: first, worst | CPU, 60 steps | RSS              |
+|-----------+-----------------------+---------------+--------------------+---------------------+---------------+------------------|
+| Vellumory | 81–101 / 171–211 ms   | 31.0–45.6 ms  | 3.4–3.5, 7–30 ms   | 3.4–4.5, 6.4–7.0 ms | 180–420 ms    | 303–310 (315) MiB |
+| Papers    | 305–324 / 495–538 ms  | 35.0–53.0 ms  | 35–39, 40–44 ms    | 17–19, 23–26 ms     | 4910–5150 ms  | 198 (215) MiB     |
+| Evince    | 224–228 / 524–563 ms  | 22.3–43.0 ms  | 4.4–4.7, 6.4–6.9   | 3.3–4.5, 6.1–6.4    | 120–140 ms    | 163 MiB           |
+| Okular    | 366–379 / 398–419 ms  | 33.2–40.6 ms  | 20.2–20.9, 23–24   | 20.4–20.8, 23–25    | 770–850 ms    | 240–249 MiB       |
+
+Read with care:
+- Open is not the same act: the desktop readers start a process (window,
+  fonts, session bus); Vellumory opens in a running Emacs, as before.
+- No GPU here: GTK 4 finds no EGL display on Xvfb and draws Papers with its
+  cairo renderer (=GSK_DEBUG=renderer=: GskCairoRenderer), on the CPU. Papers'
+  CPU and its first frame are not what it does with GL or Vulkan.
+- Papers animates a Down step for 200 ms, Okular every step for 100 ms (its
+  smooth scrolling, on by default): their settled times are the animation.
+- The X server's CPU over the steps was 0.9–1.15 s for Vellumory on X11,
+  0.7–1.2 s Evince, 1.1–1.8 s Okular, 1.3–1.5 s Papers, of which about 1.1 s is
+  the 200 fps capture alone (1.08 s over 27 s with nothing drawn); pgtk forced
+  onto X11: 1.9–2.2 s.
+- Vellumory's RSS leaves out its strips on tmpfs, 38 MiB (tracemonkey) and 42
+  MiB (ISO 32000) at the end. Split at the end, ISO 32000: Emacs 97 → 175 MB
+  during the run, worker 118 → 141 MB; tracemonkey: Emacs 70–94 → 136–142 MB,
+  worker 44–54 → 79–86 MB. A plain =emacs -Q= frame: 70 MB.
+- One Down step in four of five runs (two of three on ISO 32000) took 16–30 ms
+  in Vellumory; two further runs listed step by step (=--steps=) had none over
+  7 ms. Not attributed yet: these runs log no garbage collections.
+- Wheel notches 0.6 s apart, because closer ones reach Emacs as double and
+  triple clicks (=double-click-time= 0.5 s) and =vellumory-wheel= scrolls 80
+  pixels times the click count: ten notches 40 ms apart, as a spun wheel
+  sends them, scrolled 4400 pixels, twenty 16800 (0.6 s apart: 800); GTK
+  scrolls =page_size^(2/3)= and Okular 100 pixels a notch, whatever the pace.
+
+On this machine Vellumory answers a step within the first frame, as Evince does,
+and jumps as fast as the fastest; Okular's and Papers' steps take 4 to 10 times
+longer to show, by animation (and here, for Papers, software composition). It
+uses more memory than any of them: about 70 MiB more than Evince on the short
+paper (110 with its tmpfs strips), 140 MiB more on ISO 32000 (180 with them).
+
+** Prefetched tiles are decoded ahead (2026-10-28)
+Emacs decodes an image when it is first drawn (=lookup_image=), about 5 ms for
+a 768 px strip. A tile rendered ahead of the view is now decoded when its
+raster arrives (=image-size=), between input events, instead of in the scroll
+step that shows it; ISO 32000 reading-scroll worst steps stayed at 11 ms while
+opening measured 90–96 ms.
+
+** One worker for every document (measured, 2026-10-28)
+The worker used to be one process per document: a worker with one small
+document has 40.5 MB resident and 10 threads (6 render, 1 document, runtime),
+so five documents cost at least 200 MB and 50 threads, five render pools
+competing without a common priority. One worker now serves every document of
+the session (requests name their document, =close= frees one, the last buffer
+stops it): five documents (three fixtures, the slides, tracemonkey.pdf) open in
+one process of 47.5 MB and 10 threads, its render pool shared by priority and
+one raster budget.
+
+** Bidirectional reordering (measured, 2026-10-28)
+A reader buffer holds only images and spaces, yet Emacs reordered every
+redisplayed line for bidirectional text: interleaved measurements of one
+scroll step's redisplay gave 1.27 ms with =bidi-display-reordering=, 0.52 ms
+without. Reader and presentation buffers now turn it off (on again only when a
+page label has right-to-left characters, for the header and mode line); the
+reading-scroll median fell from 1.3–2.1 ms to 0.4–0.8 ms, below pdf-tools'
+1.0–1.6 ms.
+
+** Strip height (measured, 2026-10-28)
+Redisplay costs about 1 ms per line of images in view, so the default strip
+height went from 192 to 768 logical pixels (=vellumory-strip-height=). Same
+benchmark, fresh byte-compiled daemons: 192 px, reading mean 2.9–3.7 ms and
+fast-scroll worst 21–27 ms; 384 px, 2.1–2.4 and 3–12 ms; 768 px, 1.7–1.8 and
+2.8–4.4 ms. Rendered megapixels did not grow (192: 7.5–9.5, 384: 6.3–7.8,
+768: 5.9–9.3): idle prefetch already renders around the view. These numbers
+are for one machine and document; no claim beyond them is made.
+
+** Garbage collection waits for reading to rest (measured, 2026-10-29)
+On the screen benchmark, one or two of thirty reading steps took 17–20 ms
+instead of 2–7 ms, in some runs only. Logging =gcs-done= with each action
+placed every slow step on a collection; a collection costs about 15 ms in that
+Emacs (14.6 ms measured; doc-tools' 13.2 ms), and lands in a step's frame
+whenever it falls between the step's Lisp and its redisplay. Vellumory
+allocated 93 KB per step cycle (14 KB in the step itself), so with Emacs's
+default 800 KB threshold it collected every ninth or tenth step. Moving the
+view (=vellumory--seek=, so scrolls, jumps, animation frames and follow mode
+alike, and any command in reader, sidebar or presentation buffers) now raises
+=gc-cons-threshold= to =vellumory-gc-threshold=, and collects once reading has
+rested =vellumory-gc-idle-delay= (0.5 s) with no frames being drawn. Idle
+timers proved the wrong clock: Lisp run while Emacs is already idle (the
+benchmark's emacsclient script, a reload, follow mode) fired them inside the
+step, making things worse (a collection every fifth step, jumps 22 ms). Left
+to =gcmh-mode= when on (Doom: 64 MB, idle collection) and to the incremental
+collector. Eight runs after: no collection during the thirty steps, worst step
+6.6–8.8 ms; 60 steps at ten a second, none; 1.2 s after, the threshold back
+at 800 000 and one collection.
+
+** New windows keep the place (fixed, 2026-10-29)
+Emacs gives a window split off another, or a window showing a buffer again,
+the old window start but not its vscroll; Vellumory's strips are 768 pixels,
+so such a window came up to a strip above the place. A window made shorter (a
+split below, a popup) lost it too: point stayed on a row now below the window,
+and redisplay scrolled to it, a whole strip on (1352 → 2120 pixels). Now a
+window newly showing a document shows it where it last did, or where the
+latest window on it is (as image-mode does for DocView and pdf-tools), or
+where reading last was; a resized window is placed again at its own pixel;
+a relayout keeps every window's place, not only the first's. Found by the
+isolated Doom suite, whose fit-content check sat on a page's white margin
+after a split had moved it to the top. Two more, found by keys in Doom on :1:
+=delete-other-windows= recomputes the remaining window's start and resets its
+vscroll (Emacs 31 window.c, "Reset the vscroll, as redisplay will not"), so
+every move now records the window's place with its size and a resize alone
+puts it back; and Doom's split commands call =recenter= afterwards, which in
+a reader only scrolled the page (point is an anchor on a visible strip), so
+=recenter= keeps the place in reader windows. After both, splitting below and
+beside, closing the others, a help popup and zz leave page 11 at y 158.6.
+
+** Where the time went (fixed, measured before/after)
+- PNG encoding: 4–5× worker render cost → raw PPM.
+- Worker startup: =import Lean= made =main= call =lean_initialize()= for the
+  whole compiler (Lean/Compiler/LCNF/EmitC.lean): 40 ms and 75 MB RSS →
+  dependency-free =Vellumory.Json=: under 10 ms and 17 MB.
+- SHA-256: MuPDF ~0.3 GB/s → OpenSSL (SHA-NI) 1.96 GB/s, overlapped with
+  parsing: worker open 130 → 36 ms for 22 MB.
+- Page labels: =fz_load_page= per page under =doc_lock= (175 ms for 756
+  pages) → =pdf_page_label= (navigation reply 59 ms after open).
+- Redundant display-list builds by threads queued on =doc_lock= (4× one page).
+- Emacs: triple layout on open, DocView MD5 when opened via another mode,
+  reading the 22 MB file into the buffer, sidebar visibility recomputed every
+  refresh, GC bursts (3 collections, 93 ms, during one jump), and per-pixel
+  recomputation of raster work while scrolling within the same rows.
+
+* Automated evidence
+- Native Lean suite (=lake test=): JSON grammar/escapes/limits/round trips;
+  geometry; literal argv; qpdf statuses; CLI; native rendering (strip and
+  tile stitching equivalence, theme and overlay pixels, pre-aborted cookies,
+  24 concurrent renders identical to serial, LRU store, page-tree bounds equal
+  loaded bounds, links); search; worker lanes end to end (every request
+  answered exactly once under cancellation, runtime directory removed).
+- ProofAudit: 14 theorems (geometry, argv, marker, navigation, scheduler);
+  only propext/Classical.choice/Quot.sound.
+- Headless ERT, Emacs 31.1 and 32.0.50 (22 tests): protocol, positions with
+  content-hash fallback, watch across atomic replacement, wheel deltas,
+  scheduler parallelism/cancellation/stale replies/adaptive refocus,
+  signature-driven re-render, themes, thumbnails on spare capacity, links and
+  history, multi-page selection, file buffers never written, symlinked visits,
+  content-addressed materialization, the visit handler, search.
+- GUI ERT on Emacs 32.0.50 pgtk via emacsclient on DISPLAY=:1 (11 tests):
+  sharp visible tiles at exact logical size, bounded images, worker highlights
+  with cached clear, keyboard search, horizontal tiles only for visible
+  columns, exact scrolling with clamping, links/history/selection, theme
+  pixels, thumbnails, the 80-page sidebar following the reader, outline, and
+  displayed geometry equal to the layout model (=window-line-height=).
+- Screenshots were inspected; a 4 px strip gap caused by a =line-prefix=
+  stretch inheriting the font descent was found this way and fixed.
+
+* Raster comparison: an explicit limitation
+Text and axis-aligned rectangle fixtures match whole-page rendering byte for
+byte across strips and tiles. The diagonal fixture differs slightly at band
+edges (max 13–14/255 in at most 1% of channels), reproduced exactly by
+=mutool draw= with and without banding: MuPDF's band rasterization, not ours.
+
+* Outstanding
+A persistent compressed raster tier for expensive pages; HiDPI verification on
+a real scale-2 display (Xvfb and GTK scale 2 so far); a screen recording under
+Wayland; screen timings on a physical display. Every timing here comes from one
+server (Hetzner, AMD Ryzen 5 3600, 12 threads) on Xvfb; the author's own Doom
+on :1 is an Xvfb there too, seen through x11vnc, so these are the conditions it
+is used in, but no laptop or physical screen was reachable from it.

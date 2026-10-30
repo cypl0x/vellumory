@@ -1,0 +1,9 @@
+# Not misspellings: terms of PDF, TeX and file formats, and test data.
+[default.extend-words]
+flate = "flate"  # PDF's FlateDecode filter
+parms = "parms"  # PDF's DecodeParms
+odf = "odf"      # OpenDocument Format
+pn = "pn"        # in "PNGs"
+filll = "filll"  # TeX glue on ox-texinfo's title page
+caf = "caf"      # "café" written with an octal escape in a test
+ba = "ba"        # hint labels in a test

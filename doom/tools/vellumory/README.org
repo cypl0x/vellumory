@@ -1,0 +1,79 @@
+#+title: :tools vellumory
+#+subtitle: Continuous, incremental, asynchronous document reading
+
+* Description
+Vellumory reads PDF, EPUB, XPS, CBZ and FB2 files natively in Emacs, and
+DjVu, PostScript, DVI and office documents through converters. Pages render
+in parallel off the main thread, only where windows show them, at device
+resolution, with low-resolution previews during fast motion that refocus
+when motion stops. See the project README for the full feature list.
+
+This module replaces =:tools pdf=: enable one of them. With both, Vellumory
+opens PDF files and =doom doctor= says so.
+
+* Installation
+Add =vellumory= to =:tools= in =init.el= and run =doom sync=. straight.el
+installs the Lisp from GitHub, or from the checkout the environment variable
+=VELLUMORY_SOURCE= names. With nix-doom-emacs-unstraightened add the flake's
+=lisp= package to =extraPackages= instead.
+
+The worker program renders the pages: install the flake's package (for
+example =nix profile install github:cypl0x/vellumory=, or in a NixOS or
+home-manager configuration), or build it in a checkout with =nix build=, and
+set =vellumory-program= when it is not on =PATH=. =doom doctor= and =M-x
+vellumory-doctor= check all of it.
+
+* Keybindings
+| Normal state      | Command                                    |
+|-------------------+--------------------------------------------|
+| =j k, C-e C-y=    | scroll                                     |
+| =C-d C-u=         | half screen                                |
+| =C-f C-b SPC=     | screen                                     |
+| =gg G (counts)=   | first/last or numbered page                |
+| =J K gj gk ]] [[= | next/previous page                         |
+| =h l 0 $=         | horizontal scrolling                       |
+| =zi zo z0 zw zp=  | zoom, fit width, fit page                  |
+| =zc=              | fit the content width (no white margins)   |
+| =zs=              | two pages: single, book, pairs             |
+| =gP=              | present full screen (q leaves)             |
+| =zd=              | night mode: inverted pages, this document  |
+| =zm=              | cycle page colours (original/theme/invert) |
+| =zr=              | reading mode: text reflowed to the window  |
+| =/ ? n N=         | find text, next/previous match             |
+| =f=               | follow a visible link by label             |
+| =o O=             | contents sidebar, go to heading            |
+| =s=               | sidebar: switch previews and contents      |
+| =v=               | select with the keyboard caret (y copies)  |
+| =t T=             | page previews, page text                   |
+| =y=               | copy selection                             |
+| =m ' `=           | store/jump to an exact position register   |
+| =C-o C-i=         | back/forward through jumps                 |
+| =I V D=           | inspect, validate, compare versions        |
+| =u C-r U=         | undo, redo, history tree of edits          |
+| =e=               | edit prefix (rotate, delete, move, OCR…)   |
+| =e i=             | edit metadata (title, author, language…)   |
+| =e f=             | fill in the form                           |
+| =a h a u a s a q= | highlight, underline, strike, squiggle     |
+| =a n a l=         | note at a click, list annotations          |
+| =C-mouse-1=       | SyncTeX: visit the source of this point    |
+| =q ZZ ZQ=         | quit, kill                                 |
+| =g?=              | the menu of every command and setting      |
+
+=SPC m= (localleader) lists the same commands with descriptions. ESC clears
+search highlights and then the selection. Resting the mouse on a link within
+the document shows where it leads; right-click opens a menu anywhere.
+
+In reading mode, motions are evil's (it is text); =q= returns to the pages,
+~+~, ~-~ and ~=~ set the text size, =C= cycles its colours, =]] [[= go by page, =gO=
+lists the contents and =?= or =g?= opens its menu.
+
+* LaTeX
+With =:lang latex=, Vellumory takes over as AUCTeX's PDF viewer when a TeX
+buffer starts, after the module's own viewer list has been applied, so
+=SPC m v= shows the line at point on its page. Set
+=vellumory-sync-tex-viewer= to nil to keep Doom's choice.
+
+* Org
+=SPC n l= (=org-store-link=) in a document stores its exact position;
+=vellumory:= links open there again, and =pdf:= links from org-pdftools open
+in Vellumory when pdf-tools is not installed.

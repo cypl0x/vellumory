@@ -1,0 +1,13 @@
+\documentclass{article}
+\usepackage{hyperref}
+\begin{document}
+\begin{Form}
+\TextField[name=fullname,width=6cm]{Name:}
+
+\CheckBox[name=agree]{I agree}
+
+\ChoiceMenu[combo,name=colour]{Colour:}{Red,Green,Blue}
+
+\TextField[name=reference,readonly,value=R-17,width=3cm]{Reference:}
+\end{Form}
+\end{document}

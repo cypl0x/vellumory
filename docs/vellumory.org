@@ -1,0 +1,3801 @@
+#+title: Vellumory User Manual
+#+subtitle: Read, inspect and safely edit PDF documents in Emacs
+#+author: Wolfhard Prell
+#+email: mail@wolfhard.net
+#+language: en
+#+options: toc:nil H:4 num:t email:t
+#+texinfo_filename: vellumory.info
+#+texinfo_dir_category: Emacs
+#+texinfo_dir_title: Vellumory: (vellumory).
+#+texinfo_dir_desc: Read, inspect and safely edit PDF documents
+
+Vellumory reads PDF and other documents in GNU Emacs: continuous, sharp
+and quick, with every edit recorded and reversible, and with tools to
+inspect, validate and compare documents.  This manual explains all of it,
+from the first page to the command line.
+
+#+texinfo: @insertcopying
+
+* Copying
+:PROPERTIES:
+:COPYING:  t
+:END:
+
+This manual is for Vellumory, version 0.1.0, a reader for PDF and other
+documents in GNU Emacs.
+
+Copyright © 2026 Wolfhard Prell.
+
+#+begin_quote
+Vellumory is free software.  This manual is part of it and is distributed
+under the same terms as its Emacs Lisp code: the GNU General Public
+License, version 3 or (at your option) any later version.  The worker
+program is distributed under the GNU Affero General Public License,
+version 3 or (at your option) any later version.  Both licences are in
+the files LICENSE and LICENSE-AGPL of the source repository.
+#+end_quote
+
+* Introduction
+:PROPERTIES:
+:DESCRIPTION: What Vellumory is, why it exists, and what it is not.
+:END:
+#+cindex: introduction
+#+cindex: overview
+
+Welcome.  Vellumory lets you read PDF documents in Emacs as comfortably as
+in a dedicated viewer, and then do more with them than most viewers
+allow: inspect how a document is built, check it against archival and
+accessibility standards, and change it without ever losing an earlier
+version.
+
+This chapter explains what Vellumory is and what it is not.  If you would
+rather start reading right away, skip to [[*Getting started]].
+
+** What Vellumory is
+#+cindex: worker program
+#+cindex: architecture
+
+Vellumory is a document reader for GNU Emacs.  It shows PDF pages in an
+ordinary Emacs buffer, sharp and continuous, and keeps up while you
+scroll.  When the pages are too wide for your window, or you would simply
+rather read text, its reading mode reflows the document into one column
+of text that fits the window.  It also reads XPS, EPUB, CBZ comic books and FB2 books, and,
+through converters you may already have installed, DVI, PostScript, DjVu
+and office documents.
+
+It is made of three parts that work together:
+
+- An Emacs Lisp package.  This is the reader you see: the pages, the
+  sidebars, search, selection, the menus, Org links, evil keys and a Doom
+  Emacs module.
+- A worker program called ~vellumory~, written in Lean 4 with a small C
+  bridge to the MuPDF library.  Emacs starts it in the background.  It
+  renders pages on several threads, extracts text, reads the document's
+  structure and carries out edits.
+- The same program as a command line tool.  Scripts can inspect, validate,
+  compare and edit documents exactly as the reader does.
+
+The name joins /vellum/, the prepared skin that medieval books were written
+on, and /memory/: Vellumory remembers where you were in every document,
+and every state a document has ever been in.
+
+** Why it exists
+#+cindex: motivation
+
+Reading inside Emacs keeps documents next to your notes, your code and
+your mail.  Until now that came with compromises.  DocView converts pages
+with external programs before you see them.  pdf-tools renders a page at
+a time on Emacs's main thread, so large or complex pages make Emacs wait.
+
+Vellumory was built to remove those compromises:
+
+- Pages appear quickly and stay sharp at your screen's resolution.  Only
+  the parts of pages that a window shows are rendered at full resolution,
+  in parallel, away from Emacs's main thread.  While you scroll faster
+  than pages can be rendered, quick previews fill in and sharpen as soon
+  as you stop.
+- Your work is safe.  Every change to a document is recorded.  You can
+  undo it, redo it, or go back to any earlier state, byte for byte.
+- Reading adapts to you.  Page colours follow a dark theme, a reading
+  mode reflows the text to any window width, and resting the mouse on a
+  reference shows where it leads without leaving your place.
+- Documents are transparent.  A report shows fonts, images, metadata,
+  attachments, signatures and claimed standards.  Validation with veraPDF
+  tells you whether a document really is PDF/A or PDF/UA.
+- Claims are measured.  The speed figures in this manual come with the
+  method used to obtain them, so you can repeat them on your own machine
+  (see [[*Performance and how it is measured]]).
+
+** What Vellumory is not
+#+cindex: limitations
+#+cindex: what is missing
+
+It is only fair to say plainly what Vellumory does not do, so that you are
+not surprised later.
+
+- It is not a page-layout editor.  You cannot change the text printed on a
+  page, move images or draw.  Vellumory's edits work on the document's
+  structure: pages, metadata, attachments, annotations on selected text,
+  notes, form values, stamps, encryption, text recognition and, for
+  experts, the raw PDF syntax.
+- It needs a graphical Emacs.  Pages are images, so a text terminal cannot
+  show them.
+- It is not yet in a package archive such as MELPA.  You build the worker
+  program yourself; Nix makes that one command (see [[*Installation]]).
+- It never runs JavaScript embedded in documents.  It cannot show dynamic
+  XFA forms, because MuPDF does not render them.
+- It verifies digital signatures but cannot sign documents.
+- It has no print command.  Print the file with your system's tools.
+- It needs Emacs 29.1 or newer.  Exporting Org to accessible PDF needs
+  Org 9.7 or newer (Emacs 30's, or Org from GNU ELPA).
+- It is young.  This manual describes version 0.1.0, its first release.
+  It has been developed and tested on Linux (x86_64), with Emacs 31.1 and
+  the development version of Emacs 32.
+
+Some properties of the worker are proved in Lean: 23 theorems about the
+render scheduler, the edit history, page geometry, argument passing,
+navigation and the comparison algorithm.  They are checked to use only
+Lean's standard axioms.  They do not prove MuPDF, qpdf or veraPDF correct,
+and they are no substitute for the tests.
+
+** A first session
+#+cindex: tour
+#+cindex: first session
+
+Here is what a first session can look like.  The keys are explained in
+the chapters that follow.
+
+1. Visit a PDF with ~C-x C-f~.  The first page appears, with page previews
+   in a sidebar on the left.
+2. Press ~SPC~ to read on and ~DEL~ to go back.  ~n~ and ~p~ turn whole
+   pages.
+3. Type ~/ trace RET~.  Every match of "trace" is highlighted on the
+   pages; ~M-n~ moves to the next one.
+4. Drag over a sentence with the mouse and press ~M-w~.  The text is in
+   the kill ring, ready to paste into your notes.
+5. With the sentence still selected, press ~a h~.  The sentence is now
+   highlighted in the file itself, as an annotation.
+6. Changed your mind?  ~C-/~ undoes the edit and puts the file back
+   exactly as it was.
+7. Press ~C-c C-r~ to read the text reflowed to your window, in a size and
+   colours that suit you; ~q~ takes you back to the pages, at the place you
+   reached.
+8. Press ~?~ to see every command in one menu.
+9. Press ~q~ to put the document away.  The next time you open it, it
+   opens where you left off.
+
+** About this manual
+#+cindex: conventions
+
+Keys are written as Emacs writes them: ~C-x~ means hold Control and press
+x, ~M-x~ means Meta (usually Alt) and x.  ~RET~ is the Return key, ~SPC~ the
+space bar and ~DEL~ the Backspace key.  Every command can also be run by
+name with ~M-x~.
+
+The keys in the main chapters are those of plain Emacs.  If you use evil
+or Doom Emacs, see [[*Evil and Doom Emacs]] for their keys; the commands are
+the same.
+
+Where a feature has limits, the section says so.  If you find that the
+manual and the program disagree, the program is right and the manual has
+a bug: please report it.
+
+* Installation
+:PROPERTIES:
+:DESCRIPTION: Requirements, the worker program, and every way to install.
+:END:
+#+cindex: installation
+
+Vellumory has two parts to install: the Emacs Lisp package and the worker
+program it talks to.  The Nix flake builds both in one step, and it is the
+tested way.  The other recipes in this chapter install the Lisp from the
+source repository; you then build the worker separately.
+
+The source repository is https://github.com/cypl0x/vellumory.
+
+** Requirements
+#+cindex: requirements
+#+cindex: Emacs version
+#+cindex: graphical display
+
+You need:
+
+- GNU Emacs 29.1 or newer, running on a graphical display (X, Wayland or
+  the pgtk build) with image support.  In a text terminal the reader
+  refuses to start with the message "Vellumory needs a graphical Emacs
+  with image support".  Vellumory was developed on Emacs 31.1 and the
+  development version, Emacs 32, where its graphical tests run too.  Its
+  Emacs test suite also passes in batch mode on Emacs 29.4 and 30.2, and
+  the project's continuous integration is set up to run it on 29.4, 30.2,
+  31.1 and the development snapshot.
+- For exporting Org to accessible, archival PDF: Org 9.7 or newer, which
+  is Emacs 30's; on Emacs 29 install Org from GNU ELPA.
+- Linux.  The Nix flake builds for =x86_64-linux= and =aarch64-linux=.  All
+  tests and measurements in this manual were made on x86_64 Linux.  Other
+  systems have not been tried.
+- The worker program ~vellumory~ (see [[*The worker program]]).
+
+Some features use other programs.  Each one is optional; without it, only
+the features in its row are unavailable.
+
+| Program                                    | What it enables                                          |
+|--------------------------------------------+----------------------------------------------------------|
+| qpdf (with its fix-qdf)                    | every edit, extracting, splitting, merging, syntax view  |
+| veraPDF                                    | validation, batch validation, checks after Org export    |
+| ocrmypdf with Tesseract                    | text recognition (OCR)                                   |
+| LuaLaTeX from TeX Live 2025 or newer       | Org export to accessible PDF through LaTeX               |
+| Typst 0.14 or newer and the ox-typst package | Org export through Typst                               |
+| dvipdfmx                                   | reading DVI files                                        |
+| ps2pdf (Ghostscript)                       | reading PostScript                                       |
+| ddjvu (DjVuLibre)                          | reading DjVu                                             |
+| soffice (LibreOffice)                      | reading office documents                                 |
+
+In the Nix build, the worker has the exact paths of qpdf, fix-qdf, veraPDF
+and ocrmypdf compiled in, and ocrmypdf brings its own Tesseract.  Built any
+other way, it finds them on your =PATH=.  ~M-x vellumory-doctor~ tells you
+which ones it finds (see [[*Checking that it works]]).
+
+Several Emacs packages add to Vellumory when you have them, and none is
+required: evil, Doom Emacs, AUCTeX, org-noter, consult, embark and
+ox-typst.  The transient library, which draws the command menu, comes with
+Emacs.
+
+** The worker program
+#+cindex: worker program
+#+vindex: vellumory-program
+
+The worker is the program that does the heavy lifting.  The reader starts
+it with ~vellumory serve~ when you open your first document.  One worker
+serves every document of your Emacs session, sharing its render threads by
+priority, and it exits when you close the last document.
+
+The option ~vellumory-program~ names it.  By default Vellumory looks for the
+worker next to its own Lisp files, in two places:
+
+- In a Nix build, the Lisp lives in =share/emacs/site-lisp/vellumory= and the
+  worker in =bin/vellumory= of the same package.
+- In a source checkout, the Lisp lives in =lisp/= and the worker is built in
+  =.lake/build/bin/vellumory=.
+
+If neither exists, Vellumory runs whatever ~vellumory~ your =exec-path=
+finds.  If you keep the worker elsewhere, set the option:
+
+#+begin_src emacs-lisp
+(setq vellumory-program "/path/to/bin/vellumory")
+#+end_src
+
+*** Building the worker with Nix
+#+cindex: Nix, building the worker
+
+In a checkout of the repository:
+
+#+begin_example
+git clone https://github.com/cypl0x/vellumory
+cd vellumory
+nix build path:.
+#+end_example
+
+This builds the worker and the Lisp, and runs the native test suite and
+the Emacs tests as part of the build, so the first build takes a while.
+The result is a link =result= with the worker =result/bin/vellumory=, and in
+=result/share/emacs/site-lisp/vellumory= the Lisp, its generated autoloads
+and this manual.
+
+*** Building the worker in the development shell
+#+cindex: development shell
+
+For working on Vellumory itself, the flake has a development shell with
+every tool the tests need:
+
+#+begin_example
+nix develop path:.
+lean --run scripts/Build.lean prepare
+lean --run scripts/Build.lean lake build vellumory
+#+end_example
+
+The worker is then =.lake/build/bin/vellumory=, which the Lisp in =lisp/=
+of the same checkout finds by itself.  A checkout has no autoloads file;
+make one with =lean --run scripts/Build.lean autoloads=, which writes
+=lisp/vellumory-autoloads.el=.
+
+*** Building without Nix
+#+cindex: building without Nix
+
+Building without Nix is possible in principle but not documented or
+tested yet.  You would need Lean 4.30.0 with Lake, the lean4-cli library
+(=lean --run scripts/Build.lean prepare PATH= copies it into the checkout),
+MuPDF 1.27.2 (the worker links =libmupdf.so.27.2=), OpenSSL, TeX Live's
+libsynctex and Exempi.  =lakefile.lean= takes their locations as =-K=
+options (=mupdfInclude=, =mupdfLib=, =opensslInclude= and so on), and
+=scripts/Build.lean= shows how the pieces fit together.  If you try it,
+your notes would be very welcome.
+
+Prebuilt worker programs are planned but not available yet.
+
+** Nix flake
+#+cindex: Nix flake
+
+The flake offers these outputs, for =x86_64-linux= and =aarch64-linux=:
+
+- ~packages.SYSTEM.default~ (also called ~vellumory~) :: the worker in
+  =bin/=, and the Lisp, its generated autoloads and this manual in
+  =share/emacs/site-lisp/vellumory=.
+- ~packages.SYSTEM.lisp~ :: the Emacs Lisp package alone, byte-compiled by
+  Emacs's own package builder, without the worker.
+- ~devShells.SYSTEM.default~ :: every tool the build, the tests and the
+  benchmarks use.
+- ~checks.SYSTEM.tooling~ :: the full build with its tests.
+
+The other packages (the test documents and the Doom review build) serve
+the project's own tests and benchmarks.  There is no overlay and no NixOS
+or home-manager module yet.
+
+The simplest way to use a build is to add its Lisp directory to your
+=load-path=:
+
+#+begin_src emacs-lisp
+(add-to-list 'load-path "/path/to/result/share/emacs/site-lisp/vellumory")
+(require 'vellumory-autoloads)
+(vellumory-install)
+#+end_src
+
+Because the worker sits beside that Lisp directory, Vellumory finds it
+without further settings, and ~vellumory-info~ finds the manual there too.
+
+In a home-manager configuration, the same three lines with the package's
+store path do the job.  This sketch has not been tested:
+
+#+begin_example
+# flake.nix: inputs.vellumory.url = "github:cypl0x/vellumory";
+{ inputs, pkgs, ... }:
+let
+  vellumory = inputs.vellumory.packages.${pkgs.stdenv.hostPlatform.system}.default;
+in {
+  home.packages = [ vellumory ];   # the vellumory command line tool
+  programs.emacs = {
+    enable = true;
+    extraConfig = ''
+      (add-to-list 'load-path "${vellumory}/share/emacs/site-lisp/vellumory")
+      (require 'vellumory-autoloads)
+      (vellumory-install)
+    '';
+  };
+}
+#+end_example
+
+If you use the ~lisp~ package instead, as an ordinary Emacs package, it has
+no worker beside it: put the worker on your =PATH= or set
+~vellumory-program~.
+
+#+cindex: OCR languages
+#+cindex: Tesseract languages
+Text recognition comes with every language Tesseract knows, which takes
+about a gigabyte.  To keep only the languages you read, override the
+package:
+
+#+begin_example
+vellumory.override { tesseractLanguages = [ "eng" "deu" ]; }
+#+end_example
+
+Tesseract's orientation and script detection (=osd=), which ocrmypdf uses,
+is always kept.
+
+** Doom Emacs
+#+cindex: Doom Emacs, installing
+
+The repository contains a Doom module, =:tools vellumory=, in
+=doom/tools/vellumory=.  It replaces Doom's =:tools pdf=; enable one of the
+two, not both.
+
+1. Clone the repository and build the worker (see [[*The worker
+   program]]), for example in =~/src/vellumory=.
+2. Link the module into your private modules:
+   #+begin_example
+   mkdir -p "${DOOMDIR:-$HOME/.config/doom}/modules/tools"
+   ln -s ~/src/vellumory/doom/tools/vellumory \
+         "${DOOMDIR:-$HOME/.config/doom}/modules/tools/vellumory"
+   #+end_example
+3. In =init.el=, add =vellumory= under =:tools= (and remove =pdf=).  The
+   module has no flags.
+4. Tell Vellumory where the worker is, in =config.el=:
+   #+begin_src emacs-lisp
+   (setq vellumory-program (expand-file-name "~/src/vellumory/result/bin/vellumory"))
+   #+end_src
+5. Run =doom sync=, restart Emacs, and run =doom doctor=.
+
+The module's =packages.el= installs the Lisp with Doom's usual package
+manager (straight.el) from GitHub; if the environment variable
+=VELLUMORY_SOURCE= names a checkout, it builds from that checkout instead.
+With nix-doom-emacs-unstraightened, the module leaves the package to Nix:
+add the flake's ~lisp~ output to =extraPackages= and its ~default~ output to
+=extraBinPackages=, which puts the worker on Emacs's =PATH=.
+
+=doom doctor= runs the same checks as ~M-x vellumory-doctor~ (see [[*Checking
+that it works]]), reporting errors as errors and warnings as warnings.  It
+also warns if =:tools pdf= is enabled too, and if TeX Live lacks the LaTeX
+tagging code that Org export needs.
+
+What the module sets up is described in [[*The Doom module]].  The route
+through nix-doom-emacs-unstraightened is the one the project tests; the
+straight.el route from GitHub has not been tested yet.
+
+** straight.el
+#+cindex: straight.el
+
+#+begin_src emacs-lisp
+(straight-use-package
+ '(vellumory :type git :host github :repo "cypl0x/vellumory"
+             :files ("lisp/*.el")))
+(setq vellumory-program (expand-file-name "~/src/vellumory/result/bin/vellumory"))
+(vellumory-install)
+#+end_src
+
+straight.el generates and loads the autoloads itself.  Build the worker
+separately (see [[*The worker program]]); the path above assumes a Nix build
+in =~/src/vellumory=.  This recipe follows straight.el's documented format
+but has not been tested.
+
+** Elpaca
+#+cindex: Elpaca
+
+#+begin_src emacs-lisp
+(use-package vellumory
+  :ensure (:host github :repo "cypl0x/vellumory" :files ("lisp/*.el"))
+  :defer t
+  :init
+  (setq vellumory-program (expand-file-name "~/src/vellumory/result/bin/vellumory"))
+  (vellumory-install))
+#+end_src
+
+As with straight.el, build the worker separately.  This recipe has not
+been tested.
+
+** package-vc and use-package
+#+cindex: package-vc
+#+cindex: use-package
+
+Emacs can install packages straight from their repository with
+package-vc, and since Emacs 30 use-package can too.  Vellumory's Lisp lives
+in the =lisp= subdirectory, and its manual in =docs=:
+
+#+begin_src emacs-lisp
+(package-vc-install
+ '(vellumory :url "https://github.com/cypl0x/vellumory"
+             :lisp-dir "lisp"
+             :doc "docs/vellumory.texi"))
+(vellumory-install)
+#+end_src
+
+With use-package's =:vc= keyword:
+
+#+begin_src emacs-lisp
+(use-package vellumory
+  :vc (:url "https://github.com/cypl0x/vellumory"
+       :lisp-dir "lisp" :doc "docs/vellumory.texi" :rev :newest)
+  :defer t
+  :init (vellumory-install))
+#+end_src
+
+The =:doc= entry builds this manual and installs it into Info, so
+~vellumory-info~ finds it, and package-vc generates the autoloads.
+package-vc keeps the whole repository, so if you build the worker inside
+that checkout (in the development shell, see [[*Building the worker in the
+development shell]]), Vellumory finds it there without further settings;
+otherwise set ~vellumory-program~.  These recipes follow the documented
+package-vc format but have not been tested.
+
+** Spacemacs
+#+cindex: Spacemacs
+
+There is no Spacemacs layer yet; one is planned.  Until then, Spacemacs
+can install the package from its repository.  In =dotspacemacs/layers=:
+
+#+begin_src emacs-lisp
+dotspacemacs-additional-packages
+'((vellumory :location (recipe :fetcher github
+                               :repo "cypl0x/vellumory"
+                               :files ("lisp/*.el"))))
+#+end_src
+
+Then, in =dotspacemacs/user-config=, point Vellumory at the worker you
+built and install it:
+
+#+begin_src emacs-lisp
+(setq vellumory-program (expand-file-name "~/src/vellumory/result/bin/vellumory"))
+(vellumory-install)
+(with-eval-after-load 'evil (require 'vellumory-evil) (vellumory-evil-setup))
+#+end_src
+
+This has not been tested.
+
+** Guix
+#+cindex: Guix
+
+A Guix package does not exist yet.  It would need to build the worker
+with Lean 4.30 and MuPDF 1.27.2.
+
+** Package archives
+#+cindex: MELPA
+#+cindex: GNU ELPA
+
+Vellumory is not yet in MELPA, GNU ELPA or NonGNU ELPA.  Submitting it is
+planned.  Even from an archive, the worker will still have to be
+installed separately, because it is a compiled program; prebuilt worker
+programs are planned too.
+
+** Setting up your init file
+#+cindex: init file
+#+cindex: file associations
+
+Once the package is on your =load-path=, two lines are enough:
+
+#+begin_src emacs-lisp
+(require 'vellumory-autoloads)   ; skip this if your package manager loads it
+(vellumory-install)
+#+end_src
+
+The autoloads file is generated, not part of the repository.  Package
+managers make their own, and the Nix package contains one.  In a plain
+clone, make it once in the clone's top directory, with
+=lean --run scripts/Build.lean autoloads= in the development shell, or
+with Emacs alone:
+
+#+begin_example
+emacs --batch -Q --eval '(loaddefs-generate "lisp" (expand-file-name "lisp/vellumory-autoloads.el") (list "vellumory-autoloads.el") nil nil t)'
+#+end_example
+
+#+attr_texinfo: :compact t
+- Key: M-x vellumory-install :: Make Emacs open documents in Vellumory.  It
+  associates the extensions in ~vellumory-file-extensions~ and every file
+  that starts with =%PDF= with ~vellumory-mode~.  It also associates the
+  converted formats whose converter is installed (except those in
+  ~vellumory-converted-not-visited~), installs a file handler that visits
+  documents without reading their bytes into the buffer, skips Emacs's
+  large-file question for documents, prepares Org links, the AUCTeX viewer
+  and org-noter for when those load, and binds ~;~ in Dired (see
+  ~vellumory-dired-key~).  It does not load the reader itself; that
+  happens when you open the first document.
+- Key: M-x vellumory-uninstall :: Undo all of that.
+
+You do not have to install anything to try Vellumory: ~M-x vellumory-open~
+reads any file in Vellumory, associations or not.
+
+If you also use pdf-tools or DocView, the reader installed last wins,
+because each adds its association to the front of Emacs's lists.  Call
+~vellumory-install~ after ~pdf-tools-install~ if you want Vellumory to open
+PDFs.
+
+For evil, add:
+
+#+begin_src emacs-lisp
+(with-eval-after-load 'evil
+  (require 'vellumory-evil)
+  (vellumory-evil-setup))
+#+end_src
+
+** Reading this manual in Emacs
+#+cindex: Info manual
+
+#+attr_texinfo: :compact t
+- Key: M-x vellumory-info :: Open this manual in Info.  It is also on ~M~ in
+  the command menu (~?~) of a document, and on ~m~ in that menu elsewhere.
+
+~vellumory-info~ looks for =vellumory.info= beside Vellumory's Lisp files
+first, where the Nix package installs it, and then in the directories
+Info searches, where the package-vc recipes above install it.  The ~lisp~
+package of the flake and the Doom module's straight.el recipe do not
+install it.
+
+To build it from a checkout, run this in the development shell (it needs
+=makeinfo= from GNU Texinfo):
+
+#+begin_example
+lean --run scripts/Build.lean manual
+#+end_example
+
+That writes =target/vellumory.info=.  Then tell Info where it is:
+
+#+begin_src emacs-lisp
+(add-to-list 'Info-additional-directory-list "/path/to/vellumory/target/")
+#+end_src
+
+You can also build the manual anywhere you like with
+=makeinfo --no-split -o vellumory.info docs/vellumory.texi=.
+
+** Checking that it works
+#+cindex: checking the installation
+#+cindex: doctor
+#+findex: vellumory-doctor-mode
+
+Vellumory can check its own setup and tell you what to fix.
+
+#+attr_texinfo: :compact t
+- Key: M-x vellumory-doctor :: Check everything Vellumory relies on and
+  show the results in a report.  It is also ~!~ in the command menu.
+
+The report has six sections:
+
+- Emacs :: the version, a graphical frame, image support, PNG support, the
+  display, and how garbage collection is handled;
+- Worker :: whether the worker program is found, answers, speaks the
+  protocol this version of the Lisp expects, and renders with MuPDF;
+- Opening PDF files :: whether PDF files really open in Vellumory, and
+  whether another reader would take them over;
+- Programs for particular features :: qpdf, veraPDF, Tesseract, ocrmypdf,
+  LuaLaTeX, Typst and the converters, each with what it enables and how to
+  get it.  The worker tells the doctor which programs it runs itself: a
+  Nix-built worker's own qpdf, veraPDF and ocrmypdf (with the Tesseract
+  that comes with it) count as found even when they are not on your
+  =PATH=;
+- Integration :: evil, Doom Emacs, the icon font, and this manual;
+- Directories :: the directories Vellumory writes to.
+
+Each check is marked as fine, informational, a warning or an error, with
+a short explanation.  Where Emacs can fix a problem itself, such as making
+Vellumory the reader for PDF files or setting up evil's keys, the report
+offers a button.
+
+In the report:
+
+#+attr_texinfo: :compact t
+- Key: g (vellumory-doctor) :: Run the checks again.
+- Key: w (vellumory-doctor-copy) :: Copy the report as plain text, for a bug
+  report.
+- Key: TAB :: Move to the next button; ~<backtab>~ moves back.
+
+#+findex: vellumory-doctor-batch
+For scripts and continuous integration, ~vellumory-doctor-batch~ prints the
+same report and exits with status 1 if a check failed.  Here is part of
+its report on the development machine, before ~vellumory-install~ had run:
+
+#+begin_example
+$ emacs --batch -L lisp -l vellumory-doctor -f vellumory-doctor-batch
+Emacs
+  ✓ Emacs 31.1  29.1 or newer is needed.
+  · A graphical frame  This frame is a terminal; documents open in graphical frames.
+  ✓ Image support  PBM images, as the worker sends them.
+  …
+Worker
+  ✓ Worker program  ~/dev/emacs-pdf/.lake/build/bin/vellumory
+  ✓ Worker protocol  version 3, as this Lisp expects
+  ✓ Rendering engine  MuPDF 1.27.2 · 6 render threads on 12 cores
+Opening PDF files
+  ! PDF files open in Vellumory  They open in doc-view-mode-maybe.  `vellumory-install' makes Vellumory their reader.
+  …
+  · soffice  Missing: no reading office documents.  Part of LibreOffice.
+#+end_example
+
+A tick means fine, a dot is for information, an exclamation mark is a
+warning and a cross an error.  In batch mode there is no graphical
+frame, so that check is only informational there.
+
+Two more quick checks:
+
+- In a shell, =vellumory --help= lists the worker's subcommands.
+- Open a PDF.  The header line should soon read something like
+  =Page 1/14   100%   Ready=.
+
+If the header line says "Worker stopped" instead, or the document opens in
+another mode, see [[*Troubleshooting]].
+
+* Getting started
+:PROPERTIES:
+:DESCRIPTION: Opening documents, the screen, the menu and the mouse.
+:END:
+#+cindex: getting started
+
+This chapter covers what you need for everyday reading: opening a
+document, finding your way around the screen, the menu that holds every
+command, and the mouse.
+
+** Opening a document
+#+cindex: opening documents
+#+findex: vellumory-mode
+
+After ~vellumory-install~, documents open in Vellumory wherever Emacs visits
+files: with ~C-x C-f~, from Dired, from bookmarks, from Org links.
+
+#+attr_texinfo: :compact t
+- Key: M-x vellumory-open :: Read a file in Vellumory, whatever its name.
+  This works without ~vellumory-install~.
+- Key: M-x vellumory-project-documents :: Choose one of the current
+  project's PDFs and open it.
+
+When a document opens, the buffer holds no copy of the file.  The worker
+reads the file itself, so even a document of hundreds of megabytes opens
+without Emacs reading it into memory.  The first pages appear, and the
+page previews open in a sidebar on the left (see
+~vellumory-show-thumbnails~).
+
+Documents can say how they want to be shown.  If a PDF asks for two
+columns, it opens with two pages side by side; if it asks for its
+contents, the contents sidebar opens instead of the previews.  The option
+~vellumory-follow-document-display~ turns this off.
+
+#+cindex: encrypted documents
+#+cindex: password
+An encrypted document asks for its password.  If the password is wrong, it
+asks again.  The password stays in memory only, so that the document can
+be reloaded; it is never written anywhere.
+
+#+cindex: remote files
+#+cindex: TRAMP
+A document on a remote machine (through TRAMP), or one in a buffer without
+a file, is copied into Vellumory's cache under a name made from its
+content, and read from there.  You can read and search it, but editing
+needs a local file.
+
+** What you see
+#+cindex: header line
+#+cindex: mode line
+
+The header line above the pages shows where you are:
+
+#+begin_example
+ Page 3/14   100%   Ready
+#+end_example
+
+That is the page in view, the number of pages, the zoom and the status.
+While pages render, the status reads "Rendering…".  If the document has
+page labels that differ from the page numbers, the label comes first and
+the number in parentheses, as in =iv (4)=.  With two pages side by side,
+both are named, as in =2–3/14=.  During a search the search status is
+added, and the keyboard caret shows when it is active.  The mode line
+shows the page as well.  To hide the header line, set
+~vellumory-header-line~ to ~nil~ (the Doom module does, because its mode line
+shows the same).
+
+Between the pages you see the "desk", a neutral background (the face
+~vellumory-desk~).  The sidebar on the left shows either page previews or
+the document's contents; the tabs at its top switch between them.
+
+** The menu on ?
+#+cindex: command menu
+#+cindex: transient menu
+#+cindex: dispatch
+#+findex: vellumory-dispatch-edit
+#+findex: vellumory-dispatch-annotate
+#+findex: vellumory-dispatch-export
+#+findex: vellumory-menu
+
+You do not have to learn many keys to start.  One key shows them all.
+
+#+attr_texinfo: :compact t
+- Key: ? (vellumory-dispatch) ::
+- Key: C-c C-v :: Show a menu of every Vellumory command, grouped by what
+  it is for.  Press the key shown next to an entry to run it.  This is a
+  transient menu, the kind Magit uses.
+
+In a document, the menu has these groups:
+
+- Go :: page, page label, heading, first and last page, back and forward.
+- Find :: search for text or a regular expression, list all matches,
+  clear the search.
+- View :: zoom; the fitted page or back to your zoom; fit the width, the
+  page or the content; two pages; reading mode (~m~); a menu of page colours
+  (~C~); night mode (~N~).  Zoom and night mode keep the menu open, so you
+  can press them repeatedly.
+- Around :: page previews, contents, switching the sidebar, presenting,
+  reading across windows.
+- Inspect :: details, validation, PDF syntax, comparing versions, the edit
+  history.
+- Text :: selecting with the keyboard, copying, following a link.
+- More :: the edit, annotation and export menus (~vellumory-dispatch-edit~,
+  ~vellumory-dispatch-annotate~ and ~vellumory-dispatch-export~), reloading, this
+  manual, and the doctor that checks your setup (~!~).
+- Settings :: turn smooth scrolling, the header line, file watching and
+  link previews on or off for this session, or open Customize for all
+  options.
+
+The menu keys are short and belong to the menu.  The same commands have
+their own keys in the reader, listed in this manual; ~C-h k~ followed by a
+key, or ~C-h f~ followed by a command name, tells you more about any of
+them.
+
+In other buffers, ~M-x vellumory-dispatch~ offers what applies there:
+opening a document or a virtual document, batch work on the marked files
+in Dired, Org export in an Org buffer, installing or uninstalling, the
+manual (~m~), the doctor (~!~) and Customize.  In reading mode, ~?~ opens a
+menu of its own (see [[*Reading mode]]).
+
+There is also a "Document" menu in the menu bar (~vellumory-menu~) with most
+commands.
+
+** The mouse
+#+cindex: mouse
+#+cindex: context menu
+#+cindex: right-click menu
+
+Everything the mouse does in a document:
+
+#+attr_texinfo: :compact t
+- Key: wheel (vellumory-wheel) :: Scroll.  Trackpads scroll by their exact
+  pixel deltas; a horizontal swipe or wheel scrolls sideways.
+- Key: C-wheel (vellumory-wheel-zoom) :: Zoom in or out, keeping the spot
+  under the pointer in place.
+- Key: mouse-1 (vellumory-mouse-press) :: On a link, follow it.  On a form
+  field, fill it in.  Elsewhere, clear the selection.  Drag to select text,
+  across pages if you like.
+- Key: double-mouse-1 (vellumory-mouse-select-word) :: Select a word.
+- Key: triple-mouse-1 (vellumory-mouse-select-line) :: Select a line.
+- Key: C-mouse-1 (vellumory-sync-backward) :: Visit the TeX source that
+  produced this point (see [[*SyncTeX and AUCTeX]]).
+- Key: mouse-3 (vellumory-context-menu) :: Show a menu of what can be done
+  where you clicked.
+
+Hovering over a link shows a hand pointer and where the link goes.  If
+the mouse rests on a link within the document, a small preview of its
+target opens (see [[*Link previews]]).  Hovering over an annotation shows
+its text, and hovering over a form field says that a click fills it.
+
+The right-click menu depends on the spot:
+
+- on a link, follow it, or copy its address if it leads to the web;
+- on selected text, copy it, highlight, underline, strike out or
+  squiggle it, add a note, or search for it;
+- on a page, rotate it either way, delete it, present from it, export
+  it, or mark it for export (and, once pages are marked, export them or
+  clear the marks);
+- then always: zoom, fit, two pages, reading mode, a "Page colours"
+  submenu (the four colour choices as radio buttons, and night mode), the
+  sidebars, details, validation, PDF syntax, the edit history, undo, redo,
+  and the menu of all commands.
+
+The page previews, the contents and the other Vellumory buffers (the
+history, the validation report and so on) have right-click menus of their
+own.  If you use ~context-menu-mode~, these entries become its menu in
+Vellumory's buffers.
+
+** Leaving and coming back
+#+cindex: reading position
+#+cindex: saving place
+#+cindex: save-place-mode
+#+vindex: vellumory-state-directory
+
+#+attr_texinfo: :compact t
+- Key: q :: Put the document away (~quit-window~).
+
+Vellumory remembers exactly where you were: the page, the position on the
+page and the zoom.  It saves the place whenever Emacs has been idle for
+two seconds, and when you close the document.  The place is stored twice, once
+for the file's name and once for its content, so a renamed or copied
+document opens at the same place too.  The files are small JSON files in
+~vellumory-state-directory~ (by default =~/.local/state/vellumory=).
+
+Emacs's own ~save-place-mode~ is not used for documents: their buffer
+position means nothing, and Vellumory keeps a more exact place itself.  It
+drops a document's old save-place entry the next time the document is
+closed.
+
+#+cindex: reloading
+#+cindex: watching files
+
+#+attr_texinfo: :compact t
+- Key: r (vellumory-reload) ::
+- Key: R :: Read the file again, keeping your place.  ~M-x revert-buffer~
+  does the same.
+
+You rarely need to reload by hand.  When the file changes on disk, for
+instance because LaTeX has compiled it again, Vellumory reloads it by
+itself once the file has been quiet for a moment (~vellumory-watch-file~).
+This also works when a program replaces the file by renaming a new one
+over it.
+
+#+cindex: saving
+Saving with ~C-x C-s~ never changes the document.  The buffer holds only the
+page layout, and Vellumory never writes that into your file.  Files change
+only through the edits described in [[*Editing safely]].  ~C-x C-w~ writes a
+copy of the document instead (see [[*Documents that cannot be edited]]).
+
+** Getting help
+#+cindex: help
+
+- ~?~ shows the menu of every command.
+- ~C-h m~ lists every key of the reader.
+- ~C-h k~ followed by a key explains what it does.
+- ~M-x vellumory-info~ opens this manual.
+- ~M-x customize-group RET vellumory~ (or ~,~ in the menu) shows every
+  option.
+
+* Reading
+:PROPERTIES:
+:DESCRIPTION: Scrolling, zoom, two pages, colours, presenting, formats.
+:END:
+#+cindex: reading
+
+Pages in Vellumory form one continuous column that you scroll through like
+any long buffer.  This chapter covers moving through it, sizing it to your
+window, showing two pages side by side, recolouring pages for dark themes,
+presenting full screen, and the formats besides PDF.
+
+** Scrolling
+#+cindex: scrolling
+#+cindex: smooth scrolling
+
+#+attr_texinfo: :compact t
+- Key: j (vellumory-scroll-down) ::
+- Key: C-n ::
+- Key: <down> :: Scroll forward by a small step (64 pixels).  A numeric
+  prefix repeats it.
+- Key: k (vellumory-scroll-up) ::
+- Key: C-p ::
+- Key: <up> :: Scroll backward by a small step.
+- Key: SPC (vellumory-next-screen) ::
+- Key: C-v ::
+- Key: <next> :: Scroll forward by most of a screen.
+- Key: DEL (vellumory-previous-screen) ::
+- Key: S-SPC ::
+- Key: M-v ::
+- Key: <prior> :: Scroll backward by most of a screen.
+- Key: <right> (vellumory-scroll-right) ::
+- Key: <left> (vellumory-scroll-left) :: Scroll sideways, when the page is
+  wider than the window.
+- Key: M-x vellumory-half-screen-down ::
+- Key: M-x vellumory-half-screen-up :: Scroll by half a screen.  Evil binds
+  these to ~C-d~ and ~C-u~.
+- Key: M-x vellumory-scroll :: Scroll by a number of pixels you type.
+
+Scrolling by a screen is animated: the view glides there in about a
+tenth of a second.  ~vellumory-smooth-scroll~ turns this off, and
+~vellumory-smooth-scroll-duration~ sets the time.  Keyboard macros never
+animate.
+
+#+cindex: numeric prefix
+Digits give a count, as elsewhere in Emacs: ~5 j~ scrolls five steps.  Two
+digits are taken by commands of their own (~0~ fits the page to the window,
+~2~ shows two pages), so for counts that begin with them use ~C-u~, as in ~C-u 20 j~.
+
+** Moving by page
+#+cindex: pages, moving by
+#+cindex: going to a page
+
+#+attr_texinfo: :compact t
+- Key: n (vellumory-next-page) :: Go to the next page, or the next pair of
+  pages when two are shown side by side.  A count moves that many.
+- Key: p (vellumory-previous-page) :: Go to the previous page.  If you are
+  below the top of the current page, go to its top first.
+- Key: g (vellumory-goto-page) ::
+- Key: M-g g :: Go to a page by its number.  With a numeric prefix, go there
+  directly: ~C-u 25 g~.
+- Key: L (vellumory-goto-page-label) ::
+- Key: M-g l :: Go to a page by its label, such as "iv" or "A-3", with
+  completion.  Duplicate labels are shown with their page numbers.
+- Key: < (vellumory-first-page) ::
+- Key: M-< ::
+- Key: <home> :: Go to the first page.
+- Key: > (vellumory-last-page) ::
+- Key: M-> ::
+- Key: <end> :: Go to the last page.
+
+A jump is rendered sharp at once; you do not see a preview first.
+
+** Zoom and fit
+#+cindex: zoom
+#+cindex: fit width
+#+cindex: fit page
+
+#+attr_texinfo: :compact t
+- Key: + (vellumory-zoom-in) ::
+- Key: = :: Zoom in.
+- Key: - (vellumory-zoom-out) :: Zoom out.
+- Key: w (vellumory-fit-width) ::
+- Key: W :: Fit the page to the window's width.
+- Key: 0 (vellumory-recenter) :: Switch between the page fitted to the
+  window's width and the zoom you were reading at.  From a zoomed or
+  sideways-scrolled view, ~0~ fits the page and remembers your zoom and
+  scroll; pressed again, it returns to them.  The spot in the middle of the
+  window stays in place either way.
+- Key: P (vellumory-fit-page) ::
+- Key: H :: Fit the whole page into the window.
+- Key: c (vellumory-fit-content-width) :: Fit the page's content, without
+  its white margins, to the window's width.
+
+The zoom in the header line is relative to the window: 100% means the page
+fills the window's width.  Each zoom step is 15%, from 10% to 800%.  The
+zoom is part of the place Vellumory remembers for each document.
+
+#+cindex: margins, cropping
+#+cindex: content width
+~c~ is for papers with wide margins.  Vellumory looks at a small rendering
+of the page in view, finds where the ink is (ignoring specks of dust and
+coloured paper), and zooms so that the ink fills the window, with
+~vellumory-content-padding~ pixels of paper on each side.  The fit stays as
+the window changes size, until you zoom some other way.  It works with
+single pages only; with two pages side by side, one horizontal scroll
+cannot crop both.  The top and bottom margins stay, because the pages are
+continuous.
+
+#+cindex: EPUB text size
+#+cindex: text scale
+
+#+attr_texinfo: :compact t
+- Key: C-x C-+ (vellumory-text-scale-adjust) ::
+- Key: C-x C-- ::
+- Key: C-x C-0 :: In EPUB and FB2 books, make the text larger, smaller or
+  back to ~vellumory-reflow-text-size~; the book is laid out again and you
+  stay at the same point in it.  In other documents these keys zoom in,
+  zoom out or fit the width.
+
+** Two pages side by side
+#+cindex: two pages
+#+cindex: spreads
+#+cindex: book layout
+
+#+attr_texinfo: :compact t
+- Key: 2 (vellumory-cycle-spread) :: Cycle between single pages, two pages
+  as a printed book opens (the first page alone, then 2–3, 4–5), and two
+  pages in pairs (1–2, 3–4).
+
+Scrolling stays continuous.  ~n~ and ~p~ move by a pair of pages, the header
+line names both, and fitting the width or the page fills the window with
+the pair.  ~vellumory-spread~ chooses the layout documents open with, and
+~vellumory-spread-gap~ the gap between the two pages.
+
+If ~vellumory-spread~ is not set, documents that ask for two columns or two
+pages open that way: with odd pages on the left in pairs, with odd pages
+on the right as a book.
+
+** Page colours and dark themes
+#+cindex: dark theme
+#+cindex: page colours
+#+cindex: night mode
+
+Pages can be shown in four colourings:
+
+- original :: the document's own colours;
+- theme colours :: text in your Emacs theme's foreground colour on its
+  background;
+- inverted :: dark pages with light text, the brightness inverted and the
+  hues kept, so a red figure stays red;
+- inverted with a dark theme :: inverted while your Emacs theme is dark,
+  original while it is light.  This is the value ~auto~ of
+  ~vellumory-theme~.
+
+#+attr_texinfo: :compact t
+- Key: C-c C-d (vellumory-cycle-theme) :: Cycle the page colours of this
+  document: original, theme colours, inverted.  With ~C-u~, choose any of
+  the four by name.  With a number, take that one: ~C-u 0 C-c C-d~ is the
+  original, 1 the theme colours, 2 inverted, 3 inverted with a dark theme.
+- Key: M-x vellumory-set-theme :: Choose the page colours of this document
+  by name.
+- Key: M-x vellumory-theme-original ::
+- Key: M-x vellumory-theme-tint ::
+- Key: M-x vellumory-theme-invert ::
+- Key: M-x vellumory-theme-auto :: Choose one of the four directly, for
+  binding to keys of your own.
+- Key: M-x vellumory-night-mode :: Turn night mode on or off for this
+  document: inverted pages, whatever ~vellumory-theme~ says.  Turned off, the
+  pages take ~vellumory-theme~ again.  It is ~N~ in the command menu and ~zd~
+  with evil.
+
+#+findex: vellumory-dispatch-colours
+In the command menu, ~C~ opens a small menu of page colours
+(~vellumory-dispatch-colours~): ~c~ cycles, ~o~, ~t~, ~i~ and ~a~ choose original,
+theme colours, inverted and inverted with a dark theme, and ~n~ toggles
+night mode; the menu stays open and shows the colours in effect.  The
+right-click menu has the same choices as radio buttons.
+
+The recolouring is done by the renderer, so text stays crisp, and the
+page previews in the sidebar follow the pages.  Parts of a page not yet
+rendered are filled with the colour the paper will have, so a dark page
+never flashes white while it renders.  Search and selection highlights
+are blended to stay visible on dark pages.  When you change your Emacs
+theme, documents in theme colours, or inverted with a dark theme, are
+drawn again to match.  Set ~vellumory-theme~ to start every document in the
+colours you prefer.
+
+** Reading mode
+#+cindex: reading mode
+#+cindex: reflow
+#+cindex: narrow windows
+#+findex: vellumory-reflow-mode
+#+findex: vellumory-reflow-mode-menu
+#+findex: vellumory-dispatch-reflow
+#+findex: vellumory-reflow-customize
+#+findex: vellumory-reflow-set-colours
+
+A page is made for paper.  In a narrow window, or when you simply want to
+read, reading mode shows the document as text that flows to the window:
+one column at a comfortable line length, in the size, font and colours
+you choose, much as the reading modes of PDF apps on phones do.
+
+#+attr_texinfo: :compact t
+- Key: C-c C-r (vellumory-reflow) :: Read this document reflowed to the
+  window; in reading mode, return to the pages.  It is ~m~ in the command
+  menu and "Reading mode (reflowed)" in the right-click menu.
+
+Reading mode is a view.  The document is not changed, and leaving it
+with ~q~ shows the pages in the same window, at the place you reached.  The
+place you reach is also the one Vellumory remembers for the document.  The
+reflowed text lives in a buffer of its own, =*Reflow: NAME*=, whose header
+line names the page you are on.
+
+*** Where the text comes from
+
+The worker builds each page's text anew.  When the PDF is tagged, it
+follows the document's structure tree: paragraphs, headings, lists,
+tables, code, notes and figures keep their kind.  When it is not, it reads
+the page's layout: each block of text becomes a paragraph, much larger
+type a heading, and monospaced blocks code.  The lines of a paragraph flow
+together, with hyphens at line ends joined; code keeps its line breaks and
+indentation.
+
+Figures, formulas, images and drawings are shown as pictures cut from the
+page, sized so that their lettering is as large as the text around them,
+never wider than the text and never taller than most of the window.
+Their text becomes the pictures' alternative text, which ~I~ shows
+instead.  Running heads, page numbers and other text outside the content
+are left out: in a tagged document, the parts its structure marks as not
+belonging to the content; in an untagged one, single lines in the
+margins.  ~H~ shows them.  The page number where each page begins is shown
+small (~B~ hides it).
+
+Links work: one within the document goes to its page, here in reading
+mode; one to the web opens with ~browse-url~.  Pages are loaded as you
+read, in either direction, and about fourteen pages around the one you
+read are kept in the buffer.
+
+*** Keys in reading mode
+
+#+attr_texinfo: :compact t
+- Key: q (vellumory-reflow-quit) :: Back to the pages, at the place reached.
+  ~C-c C-r~ does the same.
+- Key: SPC ::
+- Key: DEL :: Scroll by a screen, as in any Emacs buffer.
+- Key: n (vellumory-reflow-next-page) :: Go to the start of the next page.
+- Key: p (vellumory-reflow-previous-page) :: Go to the start of the previous
+  page.
+- Key: g (vellumory-reflow-goto-page) ::
+- Key: M-g g :: Go to a page by its number.
+- Key: < (vellumory-reflow-first-page) :: Go to the first page.
+- Key: > (vellumory-reflow-last-page) :: Go to the last page.
+- Key: o (vellumory-reflow-outline) ::
+- Key: i :: Go to a heading of the document's contents, with completion.
+- Key: + ::
+- Key: = :: Larger text (~text-scale-increase~).
+- Key: - :: Smaller text (~text-scale-decrease~).
+- Key: 0 (vellumory-reflow-reset-size) :: The normal text size again.
+- Key: { (vellumory-reflow-narrower) :: Shorter lines, by five characters.
+- Key: } (vellumory-reflow-wider) :: Longer lines, by five characters.
+- Key: C (vellumory-reflow-cycle-colours) :: Cycle the colours (next
+  section).
+- Key: I (vellumory-reflow-toggle-images) :: Show figures as pictures, or as
+  their text.
+- Key: H (vellumory-reflow-toggle-running-text) :: Show or hide running
+  heads and page numbers.
+- Key: B (vellumory-reflow-toggle-page-breaks) :: Show or hide where each
+  page begins.
+- Key: TAB :: Move to the next link; ~<backtab>~ moves to the previous one.
+- Key: ? (vellumory-reflow-menu) :: A menu of all of this, with ~c~ to choose
+  the colours by name and ~,~ to customize reading mode.
+
+There is also a "Reflowed" menu in the menu bar.  Because reading mode is
+ordinary Emacs text, the rest of Emacs works on it too: ~C-s~ searches it,
+the mouse and the region select it, ~M-w~ copies.  Such a search only sees
+the pages loaded in the buffer.
+
+*** Colours, size and line length
+
+The colours come from ~vellumory-reflow-colours~:
+
+- ~auto~ :: dark while the document's pages are inverted (night mode, or
+  inverted with a dark theme), your Emacs theme's colours otherwise;
+- ~theme~ :: always your Emacs theme's colours;
+- ~paper~, ~sepia~, ~night~ :: the faces ~vellumory-reflow-paper~,
+  ~vellumory-reflow-sepia~ and ~vellumory-reflow-night~.
+
+In dark colours the pictures are inverted to match.  Lines hold at most
+~vellumory-reflow-measure~ characters (70 by default; lines of 60 to 75
+characters read best), and fewer in a narrow window; the text is centred
+with margins on both sides.  The text is set in the proportional
+~variable-pitch~ font (~vellumory-reflow-variable-pitch~), with a little
+extra space between lines (~vellumory-reflow-line-spacing~).  All of these
+are in the customization group ~vellumory-reflow~ (see [[*Reading mode
+options]]).
+
+*** Narrow windows
+
+#+vindex: vellumory-reflow-narrow-width
+Set ~vellumory-reflow-narrow-width~ to a number of columns, and a window
+narrower than that shows its document in reading mode by itself, for
+example when you split the frame side by side.  Once the window is wide
+enough again (eight columns more), it shows the pages.  The default, ~nil~,
+never does this.
+
+*** What reading mode cannot do
+
+How well a page reflows depends on the document.  A tagged PDF carries
+its own structure and reading order.  An untagged one reflows only as
+well as the reading order MuPDF finds in its layout: columns, tables and
+captions may come out in an odd order, and a heading is only recognized
+by its size.  Formulas and drawings are pictures, not text, so they
+cannot be searched or copied there.  Nothing can be edited from reading
+mode: annotating, filling in forms and the other edits work on the
+pages.
+
+** Presenting
+#+cindex: presentation
+#+cindex: slides
+#+cindex: full screen
+#+findex: vellumory-presentation-mode
+#+findex: vellumory-present-click
+#+findex: vellumory-present-wheel
+#+findex: vellumory-present-backspace
+#+findex: vellumory-present-any-key
+
+Vellumory can show a document full screen, one page at a time, like the
+presentation views of Evince and Okular.
+
+#+attr_texinfo: :compact t
+- Key: C-c C-p (vellumory-present) :: Present the document from the
+  current page.  With a prefix argument, start at the first page.  The
+  right-click menu on a page offers "Present from here".
+
+The presentation gets a frame of its own, on another monitor if there is
+one (a projector, say; see ~vellumory-present-monitor~).  Each page is fitted
+to the screen, centred on black (~vellumory-present-background~), and
+rendered sharp at the screen's resolution.  The pages on either side are
+rendered ahead, so changing pages is immediate.
+
+In the presentation:
+
+#+attr_texinfo: :compact t
+- Key: SPC (vellumory-present-next) ::
+- Key: <right> ::
+- Key: <down> ::
+- Key: <next> ::
+- Key: n :: Next page.  A left click and the wheel also go forward
+  (~vellumory-present-click~, ~vellumory-present-wheel~); so do ~j~, ~l~,
+  ~C-n~ and ~C-v~.  Past the last page comes an end screen, and the next
+  press leaves.
+- Key: S-SPC (vellumory-present-previous) ::
+- Key: <left> ::
+- Key: <up> ::
+- Key: <prior> ::
+- Key: p :: Previous page.  A right click and the wheel also go back; so do
+  ~h~, ~k~, ~C-p~ and ~M-v~.
+- Key: <home> (vellumory-present-first) ::
+- Key: g :: First page (also ~<~ and ~M-<~).
+- Key: <end> (vellumory-present-last) ::
+- Key: G :: Last page (also ~>~ and ~M->~).
+- Key: 0 (vellumory-present-digit) ::
+- Key: RET (vellumory-present-return) :: Type a page number, then ~RET~ to go
+  there.  ~DEL~ (~vellumory-present-backspace~) deletes a digit, or goes back a
+  page when you are not typing one.  ~RET~ alone goes forward.
+- Key: b (vellumory-present-black) ::
+- Key: . :: Blank the screen to black; again, or any key, returns
+  (~vellumory-present-any-key~).
+- Key: w (vellumory-present-white) ::
+- Key: , :: Blank the screen to white.
+- Key: q (vellumory-present-quit) ::
+- Key: <escape> :: Leave the presentation (also ~Q~ and ~C-g~).  The reader
+  then shows the page last presented.
+
+Links on a page can be clicked.  A page that sets a display time (/Dur)
+advances by itself after that time (~vellumory-present-follow-durations~).
+The mouse wheel turns at most one page per 0.3 seconds, so a trackpad's
+stream of events does not race through the slides.
+
+#+cindex: transitions
+Page transitions that a document defines (/Trans) are drawn as it asks
+(~vellumory-present-transitions~).  Wipe, Push, Cover, Uncover, Split, Box and
+Blinds move the two page images, with their directions and durations.
+Dissolve, Glitter, Fade and Fly are composed by the worker from both pages,
+frame by frame.  On the test machine that reached about 60 frames a second
+at 1278 × 958 pixels.  Other styles change the page at once, and a key
+pressed during a transition finishes it.  On an Emacs with canvas images
+(Emacs 32 since August 2026), composed frames replace one image's pixels
+in place, which costs Emacs less time per frame (~vellumory-present-canvas~).
+
+** Reading across windows
+#+cindex: follow mode
+#+cindex: columns
+
+On a wide screen you can read a document in columns, as ~follow-mode~ does
+for text: each window starts exactly where the one before it ends.
+
+#+attr_texinfo: :compact t
+- Key: M-x vellumory-follow-split :: Show the document in side-by-side
+  windows that follow each other, two by default; a numeric prefix sets the
+  number of columns.  It is on ~F~ in the command menu.
+- Key: M-x vellumory-follow-mode :: Turn the following on or off for the
+  windows that already show the document in this frame.
+
+The windows are chained in follow-mode's order: top to bottom, then left
+to right.  Scrolling any of them moves all of them, and a screen is all of
+them together.  Unlike ~follow-mode~, which chains windows by buffer
+positions, Vellumory chains them by pixels, so a page can continue from
+the foot of one column to the head of the next.  Each window's header line
+names its own page.  If you turn on ~follow-mode~ in a document, Vellumory
+turns on its own mode instead.
+
+** Other formats
+#+cindex: formats
+#+cindex: EPUB
+#+cindex: XPS
+#+cindex: CBZ
+#+cindex: FB2
+
+MuPDF reads several formats besides PDF, and so does Vellumory: XPS and
+OpenXPS, CBZ comic book archives, and the e-book formats EPUB and FB2.
+~vellumory-file-extensions~ lists the extensions that ~vellumory-install~
+associates.
+
+EPUB and FB2 books have no fixed pages.  Vellumory lays them out on pages
+of ~vellumory-reflow-page-size~ points (450 × 600 by default), with text of
+~vellumory-reflow-text-size~ points (11 by default), and applies the CSS file
+~vellumory-reflow-stylesheet~ if you set one.  The text-scale keys change the
+size for the book in view (see [[*Zoom and fit]]).  Each layout is a document
+of its own as far as rendering and saved places are concerned, so nothing
+from one size leaks into another.
+
+*** Converted formats
+#+cindex: DVI
+#+cindex: PostScript
+#+cindex: DjVu
+#+cindex: office documents
+#+cindex: conversion
+
+Like DocView, Vellumory reads some formats by converting them to PDF:
+
+| Format                           | Converter                   |
+|----------------------------------+-----------------------------|
+| DVI                              | dvipdfmx                    |
+| PostScript and EPS               | ps2pdf (Ghostscript)        |
+| DjVu                             | ddjvu (DjVuLibre)           |
+| OpenDocument, Word, Excel, PowerPoint, RTF | soffice (LibreOffice) |
+
+~vellumory-converters~ holds these rules, and you can change them.  A format
+is associated only when its converter is installed.  PostScript is left
+to ~ps-mode~, where it is usually edited: read a PostScript file with ~M-x
+vellumory-converted-mode~ (~vellumory-converted-not-visited~ lists the formats
+treated this way).
+
+#+attr_texinfo: :compact t
+- Key: M-x vellumory-converted-mode :: Read the file in this buffer
+  converted to PDF.
+
+The conversion is cached under ~vellumory-cache-directory~, keyed by the
+original's content and the converter, so each version converts only once.
+When the original changes, for example a DVI that TeX has written again,
+it is converted again and shown at the same place.  While a conversion
+runs, the buffer says so.  Converted documents can be read, searched and
+selected like any PDF, but not edited: an edit would not reach the
+original.  Leaving the mode shows the original file again.  The
+LibreOffice route is not covered by the project's tests.
+
+** Virtual documents
+#+cindex: virtual documents
+#+cindex: vpdf files
+#+findex: vellumory-virtual-mode
+#+findex: vellumory-virtual-view-mode
+#+findex: vellumory-virtual-edit-mode
+
+A virtual document lists pages, or parts of pages, of other documents, in
+the order you want to read them.  Vellumory reads the format of pdf-tools'
+=.vpdf= files, so files written for pdf-tools open unchanged:
+
+#+begin_src emacs-lisp
+;; %VPDF 1.0
+(("paper.pdf" (1 . 4) 7)                ; pages 1–4 and 7
+ ("slides.pdf")                         ; every page
+ ("scan.pdf" (2 0 0 1 0.5)))            ; the top half of page 2
+#+end_src
+
+A page specification is a page number, a range ~(FIRST . LAST)~ (where a
+~LAST~ of 0 means the last page), or either followed by a region ~LEFT TOP
+RIGHT BOTTOM~ in fractions of the page as shown; ~(nil . REGION)~ means every
+page.  A file that begins with the line =;; %VPDF 1.0= opens as a virtual
+document.
+
+Vellumory composes the pages into one real PDF with MuPDF, cached by the
+list and by every source's content, and reads that.  So everything works
+on it: search, occur, selection, links, saved places.  The header line
+names each page's source.
+
+#+attr_texinfo: :compact t
+- Key: M-x vellumory-virtual-create :: Start a new list: in Dired, of the
+  marked files (~; V~); elsewhere, of every PDF in the directory.  The list
+  opens for editing; ~C-c C-c~ reads it.  Save it as a =.vpdf= file to keep
+  it.
+- Key: C-c C-c (vellumory-virtual-edit) :: In a virtual document, edit its
+  list; ~C-c C-c~ (~vellumory-virtual-mode~) shows it again.
+- Key: M-} (vellumory-virtual-next-document) ::
+- Key: M-{ (vellumory-virtual-previous-document) :: Go to the first page of
+  the next or previous source.
+
+A virtual document cannot be edited as a whole; edit its sources instead.
+
+** How pages are rendered
+#+cindex: rendering
+#+cindex: previews while scrolling
+
+You never need to think about rendering, but knowing a little explains
+what you see.  Each page is laid out as strips of images.  Only the strips
+that a window shows are rendered at full resolution, at your screen's
+pixel density, on several threads (by default the processor's cores
+less two, at least two and at most six).  Work for strips that scroll out of
+view is cancelled.  While you move faster than pages can be rendered, a
+quick low-resolution preview of the whole page fills in, and it sharpens
+about a tenth of a second after you stop (~vellumory-refine-delay~).  Pages
+that are cheap to draw are rendered sharp at once.  When Emacs is idle, a
+screen ahead and half a screen behind are prepared.
+
+Rendered strips are kept in a private directory under =XDG_RUNTIME_DIR=
+(normally in memory) and removed when the worker exits.  Page previews and
+sidebar thumbnails are also kept across sessions in
+=~/.cache/vellumory/rasters=, so a document you open again shows its
+previews at once.
+
+* Finding your way
+:PROPERTIES:
+:DESCRIPTION: Search, occur, contents, previews, links, history, bookmarks.
+:END:
+#+cindex: navigation
+
+This chapter is about getting to the place you want: searching the text,
+listing every match, using the document's contents and page labels, page
+previews, links, and returning to where you were.
+
+** Searching text
+#+cindex: search
+#+cindex: incremental search
+#+cindex: case sensitivity
+#+findex: vellumory-search-quit
+
+#+attr_texinfo: :compact t
+- Key: / (vellumory-search) ::
+- Key: C-s :: Find text.  Matches are shown as you type, starting from where
+  you are reading, and highlighted on the pages.  With a prefix argument
+  (~C-u /~), case matters; otherwise it does not.
+- Key: M-n (vellumory-search-next) :: Go to the next match, wrapping round at
+  the end of the document.
+- Key: M-p (vellumory-search-previous) :: Go to the previous match.
+- Key: M-s c (vellumory-search-clear) :: Remove the highlights.
+
+While you type the search, these keys work as in isearch:
+
+#+attr_texinfo: :compact t
+- Key: C-s (vellumory-search-minibuffer-next) :: Next match.  With nothing
+  typed yet, bring back the previous search.
+- Key: C-r (vellumory-search-minibuffer-previous) :: Previous match.
+- Key: M-r (vellumory-search-minibuffer-toggle-regexp) :: Switch between
+  plain text and an Emacs regular expression.
+- Key: RET :: Keep the result and stay at the match.
+- Key: C-g :: Give up and return to where you started.
+
+Search works on the document's text, with Unicode, and a match may run
+across lines.  The current match has its own colour (the faces
+~vellumory-highlight-match~ and ~vellumory-highlight-current~).  A scanned
+document without a text layer has nothing to find: add one with text
+recognition (~e o~, see [[*Document edits]]).  While a search is still
+working through a long document, ~C-g~ in the reader stops it
+(~vellumory-search-quit~).
+
+** Regular expressions
+#+cindex: regexp search
+
+#+attr_texinfo: :compact t
+- Key: C-M-s (vellumory-search-regexp) :: Find matches of an Emacs regular
+  expression, the same way.  With a prefix argument, case matters.
+
+The expression is matched against the page's characters, with its lines
+joined by newlines, so a match may span lines; each line it covers is
+highlighted.
+
+** Listing every match
+#+cindex: occur
+#+cindex: all matches
+#+findex: vellumory-occur-mode
+#+findex: vellumory-occur-goto
+
+#+attr_texinfo: :compact t
+- Key: M-s o (vellumory-occur) :: List every line of the document that
+  matches a regular expression, by page, with some text around each match
+  (~vellumory-occur-context~).
+- Key: C-u M-s o :: The same over every open document.
+
+In the list, ~RET~ (~vellumory-occur-goto~) shows a match in the reader,
+highlighted, and ~n~ and ~p~ move through the list, showing each match.  ~M-g n~ and ~M-g p~
+(~next-error~ and ~previous-error~) step through the matches from anywhere.
+The document's text is extracted once per version and kept; on the
+756-page ISO 32000 standard that took 1.6 seconds on the test machine.
+
+#+attr_texinfo: :compact t
+- Key: M-x vellumory-occur-documents :: List the matching lines of several
+  documents, by document and page.  In Dired it takes the marked files
+  (~; o~); elsewhere every open document.  Four documents are read at a
+  time.  ~RET~ opens a match's document at the match.
+
+** Every line at your fingertips
+#+cindex: consult
+#+cindex: lines of text
+
+#+attr_texinfo: :compact t
+- Key: M-s l (vellumory-consult-line) :: Choose any line of the document's
+  text, labelled with its page, and go there with the line highlighted.
+
+With the consult package, the pages follow your choice as you move through
+the candidates, and ~consult-line~ itself is remapped to this command in
+documents (in Doom, so is ~SPC s s~).  Without consult it is an ordinary
+completing read.  consult also gains a hidden source of open documents for
+~consult-buffer~: type ~d SPC~ there to narrow to them.
+
+** Contents and headings
+#+cindex: outline
+#+cindex: contents
+#+cindex: table of contents
+#+cindex: imenu
+#+findex: vellumory-outline-mode
+
+#+attr_texinfo: :compact t
+- Key: o (vellumory-outline) :: Show or hide the document's contents (its
+  outline) in a sidebar.
+- Key: i (vellumory-goto-heading) :: Go to a heading of the contents, with
+  completion.
+
+Imenu knows the contents too, so ~M-x imenu~ and ~consult-imenu~ jump to
+headings.  In the contents sidebar:
+
+#+attr_texinfo: :compact t
+- Key: RET (vellumory-outline-activate) :: Go to the heading on this line.
+- Key: TAB :: Fold or unfold a heading.
+- Key: <backtab> :: Show everything.
+- Key: o (vellumory-outline-return) :: Return to the document.
+- Key: s :: Show the page previews in its place.
+- Key: q :: Close the sidebar.
+
+If a document has no contents, the sidebar says so, ~i~ tells you, and the
+Contents tab at the top of the sidebar is greyed out.
+
+** Page labels
+#+cindex: page labels
+
+Many books number their front matter in roman numerals, or chapters as
+"A-1".  Vellumory names pages by these labels everywhere: in the header
+line, in the previews, in occur and in Org links.  Where a label differs
+from the page number, both are shown, as in =iv (4)=.  ~L~ goes to a page by
+its label (see [[*Moving by page]]).
+
+** Page previews
+#+cindex: page previews
+#+cindex: thumbnails
+#+cindex: sidebar
+#+findex: vellumory-thumbnails-mode
+
+#+attr_texinfo: :compact t
+- Key: T (vellumory-thumbnails) :: Show or hide page previews in the left
+  sidebar.
+- Key: s (vellumory-sidebar-switch) :: Switch the sidebar between the page
+  previews and the contents.  With no sidebar, show the previews.  A click
+  on the "Pages" or "Contents" tab at the top of the sidebar does the same.
+
+The previews open by default (~vellumory-show-thumbnails~).  Every page gets a
+placeholder of its own shape with its label underneath; only the previews
+in view are rendered, at most two at a time and after the pages you are
+reading.  The page you are reading is highlighted and kept in view.  In
+the previews:
+
+#+attr_texinfo: :compact t
+- Key: RET (vellumory-thumbnail-visit) :: Go to this page (so does a click).
+- Key: n (vellumory-thumbnail-next) ::
+- Key: j :: Next preview.
+- Key: p (vellumory-thumbnail-previous) ::
+- Key: k :: Previous preview.
+- Key: T :: Close the sidebar (so does ~q~).
+
+The size of the previews is ~vellumory-thumbnail-width~ by
+~vellumory-thumbnail-height~.  The sidebar closes by itself when its
+document leaves the frame.
+
+** Links
+#+cindex: links
+#+cindex: link hints
+
+Links work as you would expect: hover to see where one goes, click to
+follow it.  Links within the document jump there; links to web pages open
+in your browser after asking (~vellumory-confirm-external-links~).
+
+#+attr_texinfo: :compact t
+- Key: f (vellumory-follow-link) :: Label every visible link with a short
+  code and follow the one you choose.  The codes are made from the letters
+  in ~vellumory-link-hint-keys~.
+
+** Link previews
+#+cindex: link preview
+#+cindex: hover preview
+#+vindex: vellumory-link-preview
+#+vindex: vellumory-link-preview-delay
+#+vindex: vellumory-link-preview-size
+#+findex: vellumory-link-preview-hide
+#+findex: vellumory-link-preview-scroll-up
+
+A reference such as "see Figure 3" or "[12]" sends you elsewhere in the
+document.  Rest the mouse on such a link, and after a moment
+(~vellumory-link-preview-delay~, 0.3 seconds, as in GNOME's Papers) a small
+frame opens beside it and shows where the link leads, without leaving
+your place.
+
+The preview shows a strip of the target page at the zoom and in the page
+colours you read in, lined up over the page's own columns, with the
+target about a third of the way down.  Its header names the page.  It
+opens above the link when there is room, otherwise below it.  Its size is
+~vellumory-link-preview-size~: a fraction of the window's width and height,
+92% by 35% by default.
+
+#+attr_texinfo: :compact t
+- Key: wheel (vellumory-link-preview-scroll-down) :: In the preview, the
+  wheel scrolls it (~vellumory-link-preview-scroll-up~ scrolls back), so you
+  can read on past its first lines.
+- Key: mouse-1 (vellumory-link-preview-visit) :: In the preview, go to the
+  link's target.  ~B~ (~vellumory-history-back~) returns to where you were.
+
+Moving the mouse away from both the link and the preview closes it, and
+so does any key.  Only links within the document are previewed; links to
+web pages are not.  Previews need a graphical display, since they are
+child frames.  ~vellumory-link-preview~ set to ~nil~ turns them off, and ~;l~ in
+the command menu toggles them for the session.
+
+** Going back
+#+cindex: history of positions
+#+cindex: back and forward
+
+After following a link you will often want to return.
+
+#+attr_texinfo: :compact t
+- Key: B (vellumory-history-back) :: Return to where you were before the
+  last link or jump.
+- Key: N (vellumory-history-forward) :: Undo that.
+
+These are the keys pdf-tools uses too.  They are also ~[~ and ~]~ in the
+command menu, ~C-o~ and ~C-i~ with evil, and ~[~ and ~]~ on Doom's localleader.
+
+Following a link within the document (also from its preview), an Org
+link, a register, a SyncTeX forward search or an entry of the annotation
+list each remember where you were.  Going to a page with ~g~ does not.
+
+** Bookmarks and registers
+#+cindex: bookmarks
+#+cindex: registers
+
+Emacs bookmarks remember the exact place in a document: the page and the
+position on it.
+
+#+attr_texinfo: :compact t
+- Key: C-x r m :: Set a bookmark here (~bookmark-set~).  Its default name is
+  the buffer and the page, such as "paper.pdf, page 7".
+- Key: C-x r b :: Jump to a bookmark (~bookmark-jump~); the document opens at
+  the bookmarked place, even if it was closed.
+
+Registers hold exact places too.  With evil, ~m~ followed by a letter stores
+the place and ~'~ or ~`~ followed by the letter returns there.  The commands
+are ~vellumory-point-to-register~ and ~vellumory-jump-to-register~, and Emacs's
+own ~C-x r j~ also jumps to such a register.  They live in
+=vellumory-evil.el=.  That file does not need evil, so without evil, load
+it with ~(require 'vellumory-evil)~ and run the commands with ~M-x~, or bind
+them to keys of your own.
+#+findex: vellumory-point-to-register
+#+findex: vellumory-jump-to-register
+
+* Selecting and copying text
+:PROPERTIES:
+:DESCRIPTION: The mouse, the keyboard caret, page text and embark.
+:END:
+#+cindex: selection
+#+cindex: copying text
+
+You can select text with the mouse or with a keyboard caret, and copy it
+into Emacs.  The text comes from the document's own character layout, in
+reading order as MuPDF determines it.
+
+** With the mouse
+#+cindex: primary selection
+
+Drag across the text to select it; the selection can run across pages.
+Double-click to select a word, triple-click to select a line.
+
+#+attr_texinfo: :compact t
+- Key: M-w (vellumory-copy-selection) :: Copy the selected text to the kill
+  ring.
+- Key: M-x vellumory-clear-selection :: Remove the selection.  A click
+  elsewhere on a page does the same.
+
+On a graphical display, the selected text also becomes the primary
+selection, so a middle click pastes it into other programs.
+
+** With the keyboard caret
+#+cindex: caret
+#+cindex: keyboard selection
+#+cindex: caret browsing
+
+Vellumory has caret browsing, as in Evince and Firefox: a text cursor that
+you move through the page's text with the keyboard.
+
+#+attr_texinfo: :compact t
+- Key: v (vellumory-visual) :: Put the caret at the first text in view and
+  start selecting, as evil's ~v~ does.
+- Key: M-x vellumory-caret-mode :: Turn the caret on or off without
+  selecting.
+
+The caret is drawn on the page, the view follows it across pages, and the
+header line shows that it is active.  A click places it.  While the caret
+is active, these keys work, and the reader's other keys (paging, zoom,
+search) still do:
+
+#+attr_texinfo: :compact t
+- Key: h (vellumory-caret-backward-char) ::
+- Key: C-b ::
+- Key: <left> :: Back a character.
+- Key: l (vellumory-caret-forward-char) ::
+- Key: C-f ::
+- Key: <right> :: Forward a character.
+- Key: j (vellumory-caret-next-line) ::
+- Key: C-n ::
+- Key: <down> :: Down a line, keeping the column.
+- Key: k (vellumory-caret-previous-line) ::
+- Key: C-p ::
+- Key: <up> :: Up a line.
+- Key: w (vellumory-caret-forward-word) ::
+- Key: M-f ::
+- Key: C-<right> :: To the start of the next word.
+- Key: b (vellumory-caret-backward-word) ::
+- Key: M-b ::
+- Key: C-<left> :: To the start of this or the previous word.
+- Key: e (vellumory-caret-end-of-word) :: To the end of this or the next word.
+- Key: 0 (vellumory-caret-line-start) ::
+- Key: ^ ::
+- Key: C-a ::
+- Key: <home> :: To the start of the line.
+- Key: $ (vellumory-caret-line-end) ::
+- Key: C-e ::
+- Key: <end> :: To the end of the line.
+- Key: } (vellumory-caret-next-block) ::
+- Key: M-} :: To the next block of text.
+- Key: { (vellumory-caret-previous-block) ::
+- Key: M-{ :: To the start of this or the previous block.
+- Key: v (vellumory-caret-toggle-selection) ::
+- Key: C-SPC :: Start selecting characters at the caret, or stop.
+- Key: V (vellumory-caret-toggle-line-selection) :: Select whole lines, or
+  stop.
+- Key: o (vellumory-caret-exchange) ::
+- Key: C-x C-x :: Swap the caret and the other end of the selection.
+- Key: S-<right> :: Shifted arrows (also with ~C-~, and ~S-<home>~,
+  ~S-<end>~) extend the selection as they move.
+- Key: y (vellumory-caret-copy) ::
+- Key: M-w :: Copy the selection and leave the caret.
+- Key: q (vellumory-caret-quit) ::
+- Key: <escape> ::
+- Key: C-g :: Leave the caret and its selection.
+
+If there is no text from the caret onwards, for example in a scan, the
+caret says so; text recognition (~e o~) adds a text layer.
+
+** The text of a page
+#+cindex: page text
+
+#+attr_texinfo: :compact t
+- Key: t (vellumory-page-text) :: Show the text of the page in view in a
+  buffer of its own, =*Text: NAME · PAGE*=, where you can search, select and
+  copy it with all of Emacs's tools.
+
+To write the text of the whole document to a file, see
+~vellumory-export-text~ in [[*Writing new files]].
+
+** Actions with embark
+#+cindex: embark
+
+With the embark package, ~embark-act~ in a document acts on the selected
+text, or on the page in view if nothing is selected.
+
+On selected text, ~s~ searches for it and ~o~ lists its occurrences, besides
+embark's general actions such as copying.  On the page in view: ~RET~ goes
+to it, ~x~ extracts pages, ~r~ and ~R~ rotate, ~d~ deletes, ~k~ keeps pages, ~t~
+shows the page's text and ~p~ presents.
+
+* Annotations and forms
+:PROPERTIES:
+:DESCRIPTION: Marking text, notes, and filling in PDF forms.
+:END:
+#+cindex: annotations
+
+Annotations are notes and markings stored in the PDF itself, so every PDF
+reader shows them.  In Vellumory each annotation is an edit like any
+other: it is recorded in the document's history and can be undone (see
+[[*Editing safely]]).
+
+** Marking selected text
+#+cindex: highlight
+#+cindex: underline
+#+cindex: strike out
+
+Select some text first (see [[*Selecting and copying text]]), then:
+
+#+attr_texinfo: :compact t
+- Key: a h (vellumory-highlight) :: Highlight it.
+- Key: a u (vellumory-underline) :: Underline it.
+- Key: a s (vellumory-strike-out) :: Strike it out.
+- Key: a q (vellumory-squiggly) :: Underline it with a squiggle.
+
+With a prefix argument (for example ~C-u a h~), Vellumory asks for a
+comment.  Without one, the marked text itself becomes the annotation's
+contents, so the annotation reads well to screen readers too.  A selection
+across pages gets one annotation per page.
+
+The colours come from ~vellumory-annotation-colors~ and the author's name
+from ~vellumory-annotation-author~ (your ~user-full-name~).  Each annotation is
+dated with the time the edit is recorded, so replaying the same edit gives
+the same bytes.
+
+** Notes
+#+cindex: notes
+#+cindex: sticky notes
+
+#+attr_texinfo: :compact t
+- Key: a n (vellumory-add-note) :: Click where the note goes, then type its
+  text.  The note appears as the usual note icon.
+
+** Listing, editing and deleting
+#+cindex: annotation list
+#+findex: vellumory-annotation-list-mode
+
+#+attr_texinfo: :compact t
+- Key: a l (vellumory-annotations) :: List every annotation of the document
+  in a table, =*Annotations: NAME*=.
+
+In the list:
+
+#+attr_texinfo: :compact t
+- Key: RET (vellumory-annotation-list-visit) :: Show the annotation in the
+  document.  ~vellumory-history-back~ returns from there.
+- Key: e (vellumory-annotation-list-edit) :: Replace the annotation's text.
+- Key: d (vellumory-annotation-list-delete) :: Delete the annotation.
+- Key: g (vellumory-annotation-list-refresh) :: Read the annotations again.
+
+Hovering over an annotation on the page shows its text.  On the command
+line, ~vellumory annotations FILE~ prints them as JSON (see [[*Inspecting from
+the command line]]).
+
+** What annotations cannot do yet
+#+cindex: annotations, limits
+
+The kinds are highlight, underline, strike-out, squiggly underline and
+text notes.  There is no free-hand drawing, there are no shapes, and
+annotations cannot be moved or resized; editing changes their text only.
+
+Annotations respect the archival standard PDF/A: they are marked as
+printable, as PDF/A requires.  Highlights need transparency, which PDF/A-1
+forbids, so in a PDF/A-1 document Vellumory refuses to highlight and
+suggests an underline instead.
+
+** Filling in forms
+#+cindex: forms
+#+cindex: form fields
+#+cindex: AcroForm
+#+findex: vellumory-form-mode
+
+#+attr_texinfo: :compact t
+- Key: e f (vellumory-fill-form) :: Show the document's form fields in a
+  form buffer, =*Form: NAME*=.
+
+Text fields take any text, checkboxes yes or no, and choice fields one of
+the values shown.  Read-only fields are shown but cannot be changed, and
+signature fields are left out.
+
+#+attr_texinfo: :compact t
+- Key: C-c C-c (vellumory-form-commit) :: Record all changed fields as one
+  edit, which undo reverses.  The fields on the page are redrawn with their
+  new values.
+- Key: C-c C-k (vellumory-form-cancel) :: Discard the form.
+
+You can also fill a field right on the page: click it.  A text or choice
+field asks for its value, and a checkbox toggles.  Each such click is an
+edit of its own.
+
+#+cindex: JavaScript
+Filling a form never runs code from the document: values are set with the
+document's JavaScript triggers ignored.  Dynamic XFA forms are not
+supported, because MuPDF cannot render them; the document details say when
+a document has one.  On the command line, ~vellumory form FILE~ lists the
+fields, and the ~fill-form~ operation fills them (see [[*Edit operations]]).
+
+* Inspecting documents
+:PROPERTIES:
+:DESCRIPTION: Details, signatures, validation, preflight, PDF syntax.
+:END:
+#+cindex: inspection
+
+A PDF can be many things inside: tagged or untagged, with embedded fonts or
+without, signed, encrypted, archival.  Vellumory shows you which.
+
+** Document details
+#+cindex: document details
+#+cindex: fonts
+#+cindex: metadata, viewing
+#+cindex: attachments, viewing
+#+findex: vellumory-details-mode
+
+#+attr_texinfo: :compact t
+- Key: I (vellumory-details) :: Show what the document is made of, in a
+  buffer =*Details: NAME*=.
+
+The report has these sections:
+
+- Document :: format and version, number of pages, size, objects and
+  revisions; encryption and the permissions it denies; the standards the
+  document claims (PDF/A, PDF/UA and others, read from its XMP metadata);
+  whether it is tagged and has a structure tree; its language; whether it
+  is linearized; and whether MuPDF had to repair its structure.
+- Signatures :: see [[*Signatures]].
+- Metadata :: title, author, subject, keywords, creator and producer;
+  creation and modification dates in readable form; whether there is XMP
+  metadata.
+- Content :: fonts (how many are embedded, how many have Unicode maps),
+  images, annotations (links, form widgets, markup), forms (including XFA),
+  JavaScript (never executed here), transparency, output intents, and
+  navigation: the outline, page labels and how the document asks to open.
+- Attachments :: every embedded file.  ~RET~ on one opens it; it is copied
+  to Vellumory's cache first.
+- Page :: for the page in view, its boxes (media, crop, bleed, trim, art)
+  in points and millimetres, its rotation and user unit, and the fonts,
+  images and annotations it uses.
+
+Problems, such as fonts that are not embedded, are highlighted.  Claims
+are reported as claims; whether the document really meets a standard is
+what validation tells you.
+
+In the report:
+
+#+attr_texinfo: :compact t
+- Key: g (vellumory-details-refresh) :: Read the report again.
+- Key: e (vellumory-details-edit-metadata) :: Edit the metadata (see
+  [[*Document edits]]).
+- Key: a (vellumory-details-attach) :: Attach a file.
+- Key: D (vellumory-details-detach) :: Remove an attachment.
+- Key: TAB :: Move to the next button, such as an attachment; ~<backtab>~
+  moves back.
+
+The command line prints the same report as JSON with ~vellumory info FILE~.
+
+** Signatures
+#+cindex: digital signatures
+#+cindex: signatures, verifying
+
+The details report verifies every digital signature itself, with OpenSSL.
+For each one it tells you:
+
+- whether the signed bytes are intact;
+- who signed (the name in the certificate);
+- whether the signer's certificate chains to the certificates your system
+  trusts, and if not, why not (a self-signed certificate, for example);
+- whether the signature covers the whole file, or the document was changed
+  after signing.
+
+Because every edit rewrites the file, an edit invalidates signatures.
+Before editing a signed document, Vellumory asks.  The signed version stays
+in the history, and undo restores it byte for byte, signatures intact.
+
+Vellumory verifies signatures; it cannot create them.  ~vellumory signatures
+FILE~ prints the same verification as JSON.
+
+** Validating PDF/A, PDF/UA and WTPDF
+#+cindex: validation
+#+cindex: veraPDF
+#+cindex: PDF/A
+#+cindex: PDF/UA
+#+cindex: WTPDF
+#+cindex: accessibility
+#+findex: vellumory-validation-mode
+
+PDF/A is the ISO standard for archiving, PDF/UA the one for accessibility,
+and WTPDF (Well-Tagged PDF) its counterpart from the PDF Association.
+veraPDF is the reference validator for them.  Vellumory runs it for you.
+
+#+attr_texinfo: :compact t
+- Key: V (vellumory-validate) :: Validate the document against a profile you
+  choose, and show the report in =*Validation: NAME*=.
+
+The profiles are: "auto" (whatever the document claims), PDF/A-1a, 1b,
+2a, 2b, 2u, 3a, 3b, 3u, 4, 4e and 4f, PDF/UA-1 and PDF/UA-2, and WTPDF 1.0
+for reuse and for accessibility.
+
+The report lists the failed rules by specification and clause, each with
+its failed checks.  The same check failing hundreds of times on a page is
+one line with a count.  A check that names a page takes you there with
+~RET~, and ~M-g n~ (~next-error~) walks through the checks from anywhere.
+
+#+attr_texinfo: :compact t
+- Key: n (vellumory-validation-next-rule) :: Next failed rule.
+- Key: p (vellumory-validation-previous-rule) :: Previous failed rule.
+- Key: b (vellumory-validation-beyond) :: Go to the checks beyond veraPDF
+  (next section).
+- Key: TAB :: Next button; ~<backtab>~, the previous one.
+
+The verdict is veraPDF's.  PDF/UA has requirements that only a person can
+judge, such as whether alternative text is meaningful or the reading order
+makes sense, and the report says so.  Validation needs veraPDF, a Java
+program, and a document read from a local file.
+
+** Checks beyond veraPDF
+#+cindex: preflight
+
+Some problems matter whatever a document claims to be.  The validation
+report shows them below veraPDF's results, and they appear at once,
+because they take milliseconds.  On the command line, ~vellumory preflight
+FILE~ prints them as JSON.
+
+Errors:
+- a damaged cross-reference table (readers repair it differently);
+- links whose destination is missing or outside the document (MuPDF would
+  silently send them to page 1);
+- contents entries that lead nowhere;
+- 40-bit encryption.
+
+Warnings:
+- RC4 encryption, which can be broken;
+- earlier versions of the content still inside the file after incremental
+  updates, and recoverable by anyone (not reported for signed documents,
+  where incremental updates are expected);
+- JavaScript;
+- an XFA form;
+- fonts that are not embedded;
+- crop, trim, bleed or art boxes larger than the page.
+
+Notes:
+- composite fonts without a Unicode map, whose text cannot be copied or
+  searched reliably;
+- no title, no document language, no tagging;
+- larger than 10 MB and not linearized;
+- pages of different sizes.
+
+Where Vellumory can fix a problem, the message names the key: ~e c~
+rewrites the file (repairing it and removing earlier versions), ~e E~
+encrypts with AES-256, ~e i~ sets the title and language, ~e L~ linearizes.
+
+** The PDF syntax view
+#+cindex: PDF syntax
+#+cindex: QDF
+#+cindex: raw PDF
+#+findex: vellumory-syntax-mode
+
+For the curious and the experts: Vellumory can show the document's raw
+PDF objects, and let you edit them.
+
+#+attr_texinfo: :compact t
+- Key: C-c C-c (vellumory-syntax) :: Show the document in qpdf's QDF form,
+  in =*Syntax: NAME*=: normalized and uncompressed, one object per block, one
+  dictionary key per line, with syntax highlighting.
+
+In the syntax view:
+
+#+attr_texinfo: :compact t
+- Key: RET (vellumory-syntax-follow) ::
+- Key: M-. :: Visit the object a reference such as =12 0 R= points to.
+- Key: C-x C-q :: Make the view editable (~read-only-mode~).
+- Key: C-c C-c (vellumory-syntax-commit) :: Adopt the edited syntax as the
+  document's new state.  qpdf's fix-qdf recomputes offsets and stream
+  lengths, qpdf writes a normal PDF, and the result must open before it
+  replaces the file.  It is recorded and can be undone like any edit.
+- Key: C-c C-k (vellumory-syntax-discard) :: Throw away your changes and show
+  the document's syntax again.
+
+Imenu lists the objects by type, and the pages.  For a very large
+document, Vellumory asks before showing a view larger than
+~vellumory-syntax-size-warning~ (64 MB).  The QDF file itself is cached under
+=~/.cache/vellumory/qdf=, and ~vellumory qdf FILE~ prints its path.
+
+* Editing safely
+:PROPERTIES:
+:DESCRIPTION: Every edit recorded: pages, metadata, history, snapshots.
+:END:
+#+cindex: editing
+#+cindex: safety
+
+You can change documents in Vellumory without fear.  This is the promise:
+no edit can lose an earlier version, and any state the document has been
+in can be brought back exactly.
+
+** How every edit is kept
+#+cindex: snapshots
+#+cindex: content-addressed store
+#+cindex: atomic replacement
+
+Every edit goes the same way:
+
+1. It works on an unchangeable snapshot of the document, taken from a
+   store in which each version is filed under the SHA-256 hash of its
+   bytes.
+2. The result is checked: it must open, and it must have pages.
+3. The result is stored, and the edit is recorded in the document's
+   history, with the time and a description.
+4. Only then is your file replaced, in one step (a new file is written
+   beside it and renamed over it), keeping its permissions.
+
+Nothing in the store is ever deleted, and identical versions are stored
+once.  Before restoring a snapshot, Vellumory checks it against its hash.
+If the file was changed by another program since Vellumory last saw it,
+that version is recorded first, as "changed outside Vellumory", so it is
+never lost either.  Edits are deterministic: the same edit of the same
+bytes gives the same result.  Two Emacs sessions, or Emacs and a script,
+can edit the same document; their edits are taken one at a time.
+
+After an edit the message names the new state, for example
+=rotate pages 1 by +90° (14 pages) · state 1=, and how to undo it.
+
+#+cindex: PDF/A, keeping
+Edits keep archival documents archival.  Every rewrite puts the end of
+line before each stream's end that PDF/A demands, and documents claiming
+PDF/A-1 never get object streams, which PDF/A-1 forbids.  The test suite
+checks with veraPDF that rotating, keeping pages, page labels, compression
+and metadata edits leave PDF/A-1b and PDF/A-2b documents compliant.
+
+All edit keys start with ~e~, and ~e~ in the command menu shows them grouped.
+
+** Page edits
+#+cindex: rotating pages
+#+cindex: deleting pages
+#+cindex: reordering pages
+#+cindex: page ranges
+
+#+attr_texinfo: :compact t
+- Key: e r (vellumory-rotate-pages) :: Rotate the current page clockwise.
+  With a prefix argument, rotate the pages you type.
+- Key: e R (vellumory-rotate-pages-counterclockwise) :: Rotate
+  counterclockwise.
+- Key: e d (vellumory-delete-pages) :: Delete the current page, or with a
+  prefix argument the pages you type.  At least one page must remain.
+- Key: e m (vellumory-move-page) :: Move the current page so that it
+  becomes page number N.
+- Key: e k (vellumory-keep-pages) :: Keep only the pages you list, in that
+  order.  This reorders, deletes and duplicates in one go: =3,1-2= puts page
+  3 first.
+- Key: e a (vellumory-append-documents) :: Append the pages of another
+  document.
+- Key: e l (vellumory-set-page-labels) :: Set page labels, in qpdf's notation
+  =FIRST-PAGE:STYLE[/START[/PREFIX]]=, one per range.  The styles are ~D~
+  (decimal), ~R~ and ~r~ (upper and lower case roman), ~A~ and ~a~ (letters).
+  =1:r 5:D= numbers pages 1 to 4 in lower case roman and from page 5 in
+  decimal.
+
+Page lists are written like =1-3,7=.  A range may run backwards (=9-7=),
+and =z= stands for the last page.  The right-click menu on a page offers
+rotating and deleting that page directly.
+
+** Document edits
+#+cindex: metadata, editing
+#+cindex: title
+#+cindex: document language
+#+cindex: attachments
+#+cindex: associated files
+#+cindex: stamps
+#+cindex: watermarks
+#+cindex: OCR
+#+cindex: text recognition
+#+findex: vellumory-metadata-mode
+#+findex: vellumory-metadata-commit
+#+findex: vellumory-metadata-cancel
+
+#+attr_texinfo: :compact t
+- Key: e i (vellumory-edit-metadata) :: Edit the title, author, subject,
+  keywords, creator, producer, language, whether viewers show the title
+  instead of the file name, and the creation date, in a form buffer
+  =*Metadata: NAME*=.
+
+In the metadata form, ~C-c C-c~ (~vellumory-metadata-commit~) records the
+changes as one edit, and ~C-c C-k~ (~vellumory-metadata-cancel~) discards
+them.  Emptying a field removes it.  The modification date becomes the
+time of the edit.  Vellumory keeps the three places where PDF stores
+metadata consistent, as PDF/A and PDF/UA require: the Info dictionary, the
+document catalog (language and title display) and the XMP packet, which is
+updated with Adobe's XMP Toolkit (through Exempi) so that every other XMP
+property, including the PDF/A and PDF/UA identification, stays.  PDF 2.0
+documents get no Info dictionary added.
+
+#+attr_texinfo: :compact t
+- Key: e A (vellumory-attach-file) :: Embed a file in the document, under a
+  name and with a description.  With a prefix argument, also say how it
+  relates to the document (Source, Data, Alternative, Supplement,
+  EncryptedPayload, FormData, Schema or Unspecified), which makes it an
+  associated file in the sense of PDF 2.0 and PDF/A-3.
+- Key: e D (vellumory-remove-attachment) :: Remove an embedded file by its
+  name.
+
+Attachments follow the standards.  In PDF/A-3 and PDF/A-4 documents every
+attachment becomes an associated file, with the relationship Unspecified
+unless you name one.  PDF/A-1 forbids attachments, and PDF/A-2 and plain
+PDF/A-4 forbid attachments that are not PDF/A themselves; Vellumory refuses
+those instead of silently breaking the document's claim.  A replaced or
+removed attachment leaves nothing behind in the file.
+
+#+attr_texinfo: :compact t
+- Key: e w (vellumory-stamp) :: Draw the first page of another PDF over the
+  pages you name (a qpdf page range; =1-z= is every page).  With a prefix
+  argument, draw it beneath them instead, as a letterhead or watermark
+  behind the text.
+- Key: e o (vellumory-ocr) :: Recognize text with ocrmypdf, adding an
+  invisible, searchable text layer.  You give the Tesseract languages
+  (=eng=, or =deu+eng= for two) and what to do with pages that already have
+  text: =skip= them, =redo= an earlier OCR layer, or =force= recognition by
+  rasterizing every page first.  This can take a while.
+- Key: e f :: Fill in the form (see [[*Filling in forms]]).
+
+** Compression and encryption
+#+cindex: compression
+#+cindex: linearization
+#+cindex: encryption
+
+#+attr_texinfo: :compact t
+- Key: e c (vellumory-compress) :: Compress losslessly: object streams, and
+  every zlib-compressed stream recompressed at the strongest level.  The
+  history shows the size before and after.  Rewriting the file this way also repairs a damaged structure and
+  removes earlier versions left by incremental updates.
+- Key: e L (vellumory-linearize) :: Linearize the document ("fast web view"),
+  so that a browser can show the first page before the whole file has
+  arrived.
+- Key: e E (vellumory-encrypt) :: Encrypt with AES-256.  You give a password
+  to open the document (empty for none), a password to change its
+  permissions, and the permissions: printing (full, low resolution or
+  none), changes (all, annotations only, forms only, assembly only, or
+  none), and whether text and images may be copied.
+- Key: e P (vellumory-decrypt) :: Remove the encryption, given the password.
+
+Passwords never appear on a command line, where other users of the machine
+could see them, and are never recorded in the history.  The reader keeps
+the password of the document you encrypted in memory, so it can show the
+result.
+
+** Undo and redo
+#+cindex: undo
+#+cindex: redo
+
+#+attr_texinfo: :compact t
+- Key: C-/ (vellumory-undo) ::
+- Key: C-x u ::
+- Key: e u :: Go back to the state before the last edit.  Emacs's undo keys
+  run this command in documents.
+- Key: C-? (vellumory-redo) ::
+- Key: e U :: Return to the most recent state after the current one.
+
+Undo and redo rewrite the file from the stored snapshots, byte for byte.
+They work across Emacs sessions: the history is stored with the document's
+snapshots, not in Emacs's memory.
+
+** The history tree
+#+cindex: history tree
+#+cindex: branches
+#+cindex: checkout
+#+findex: vellumory-history-mode
+
+When you undo and then make a different edit, the old line of edits is not
+thrown away; the history branches, like a version control system.
+
+#+attr_texinfo: :compact t
+- Key: e h (vellumory-history) :: Show every state of the document as a tree,
+  in =*History: NAME*=.
+
+It looks like this (here after rotating page 1, undoing that, and then
+keeping only the first three pages):
+
+#+begin_example
+~/papers/paper.pdf
+
+○ 2026-10-29 22:01:15  opened (14 pages)  3662ff519e
+├─ ○ 2026-10-29 22:01:15  rotate pages 1 by +90° (14 pages)  a428dc9047
+└─ ● 2026-10-29 22:01:15  keep pages 1,2,3 (3 pages)  1548acec89
+
+c make current  v view without changing the file  d compare with now  g refresh  q quit
+#+end_example
+
+The filled circle is the current state.  Each line shows when the state
+was recorded, what the edit was, and the beginning of the snapshot's hash.
+
+#+attr_texinfo: :compact t
+- Key: RET (vellumory-history-checkout) ::
+- Key: c :: Make the state on this line current.  The file is rewritten from
+  its snapshot, and the reader shows it.  Nothing is lost: the state you
+  left stays in the tree.
+- Key: v (vellumory-history-view) :: Open the state on this line in a reader
+  of its own, read-only, without changing the file.  Its buffer is named
+  after the file and the state, as in =paper.pdf@1=.
+- Key: d (vellumory-history-diff) :: Compare the state on this line with the
+  current file (see [[*Comparing versions]]).
+- Key: n (vellumory-history-next) ::
+- Key: j :: Next state.
+- Key: p (vellumory-history-previous) ::
+- Key: k :: Previous state.
+- Key: g (vellumory-history-refresh) :: Read the history again.
+
+** Where the history lives
+#+cindex: store location
+#+cindex: VELLUMORY_STORE
+
+The snapshots and histories are kept in =$XDG_DATA_HOME/vellumory=, which is
+usually =~/.local/share/vellumory=.  This is durable data, not a cache:
+=objects/= holds the snapshots, =history/= one small JSON file per document,
+and =locks/= the files that keep two editors from interfering.  The
+environment variable =VELLUMORY_STORE= moves the whole store elsewhere, which
+is useful for experiments.
+
+Two things are good to know:
+
+- A document's history belongs to its path.  If you move or rename the
+  file, its next edit starts a new history for the new path.  The old
+  snapshots stay in the store, but the new history does not link to them.
+- The store only grows: every state is a complete copy of the document,
+  stored once.  There is no command to prune it yet.  Its files are ordinary
+  files; deleting them is possible, but it takes away the ability to go
+  back.
+
+** Documents that cannot be edited
+#+cindex: read-only files
+
+Some documents are not edited, and Vellumory tells you why:
+
+- A read-only file, or a file in a read-only directory: edits replace the
+  file, so they need write access.  Write a copy and edit that (see
+  below).  Reading, searching, inspecting and exporting work as usual.
+- A converted document (DVI, PostScript, DjVu, office): the edit would not
+  reach the original.
+- A virtual document: edit its sources.
+- A document that is not a local file (remote, or in a buffer of its own).
+- A snapshot opened from the history tree with ~v~.
+
+#+cindex: copy of a document
+
+#+attr_texinfo: :compact t
+- Key: C-x C-w (vellumory-write-copy) :: Write a copy of the document to a
+  file you name, make the copy writable, and visit it, so that you can
+  edit the copy.  The suggested name is the document's with =-copy= added.
+  In a reader, ~C-x C-w~ runs this command instead of ~write-file~.
+
+The copy is of the PDF that Vellumory reads, so a converted, virtual or
+remote document becomes an ordinary PDF file of its own, which can be
+edited.
+
+A signed document can be edited, but Vellumory asks first, because the edit
+invalidates its signatures (see [[*Signatures]]).
+
+** Writing new files
+#+cindex: extracting pages
+#+cindex: splitting documents
+#+cindex: exporting text
+#+cindex: marked pages
+
+These commands write new files and leave the document as it is.  They
+work on read-only documents too.
+
+#+attr_texinfo: :compact t
+- Key: e x (vellumory-extract-pages) :: Write the pages you name (a qpdf
+  page range such as =1-3,7=) to a new document.  The outline and the
+  structure tags of those pages are kept.
+- Key: e s (vellumory-split) :: Split the document into documents of N pages
+  each, written into a directory you choose, named after the document and
+  the page range.
+- Key: e t (vellumory-export-text) :: Write the text of every page to a
+  file, with a form feed between pages.
+- Key: M-x vellumory-export-page :: Write the page in view to a new
+  document.  The suggested name is the document's name with the page
+  number, beside it.
+
+#+cindex: marking pages for export
+You can also collect pages first and export them together:
+
+#+attr_texinfo: :compact t
+- Key: M-x vellumory-mark-page :: Mark the page in view for export, or unmark
+  it.
+- Key: M-x vellumory-export-marked-pages :: Write the marked pages, in page
+  order, to a new document.
+- Key: M-x vellumory-unmark-all :: Clear every mark.
+
+In the page previews, marking works as in Dired, and marked previews show
+a check mark:
+
+#+attr_texinfo: :compact t
+- Key: m (vellumory-thumbnail-mark-page) :: Mark the page at point and move
+  to the next.
+- Key: u (vellumory-thumbnail-unmark-page) :: Unmark it and move to the next.
+- Key: U (vellumory-thumbnail-unmark-all) :: Clear every mark.
+- Key: x (vellumory-thumbnail-export-marked) :: Export the marked pages.
+
+The export menu (~x~ in the command menu) offers all of this too: ~p~ exports
+this page, ~x~ extracts pages, ~s~ splits, ~m~ marks or unmarks this page, ~e~
+exports the marked pages, ~U~ clears the marks, ~t~ exports the text and ~T~
+shows the text of this page.  The right-click menu on a page offers
+exporting it and marking it.
+
+* Comparing versions
+:PROPERTIES:
+:DESCRIPTION: A semantic comparison of two versions of a document.
+:END:
+#+cindex: comparing versions
+#+cindex: diff
+#+findex: vellumory-diff-mode
+
+When a document comes back from a colleague, or after a series of edits,
+you want to know what changed.  Vellumory compares what the document says,
+not its bytes.
+
+#+attr_texinfo: :compact t
+- Key: d (vellumory-diff) :: Compare an earlier version (a file you choose)
+  with this document, and show the result in =*Diff: NAME*=.
+
+From the history tree, ~d~ compares any recorded state with the current file
+(see [[*The history tree]]).
+
+How the comparison works:
+
+- Pages are paired by their text, so an inserted or deleted page does not
+  make every later page look different.
+- Paired pages are compared word by word.  Added words are highlighted in
+  the reader (the face ~vellumory-highlight-added~) for as long as the
+  comparison buffer exists; removed words are listed.
+- Paired pages are also compared by their rotation and their media, crop,
+  bleed, trim and art boxes, so a turned page shows up as, for example,
+  "rotation 0° → 90°", even when its words are unchanged.
+- Metadata, attachments and structure are compared field by field.
+
+In the comparison buffer:
+
+#+attr_texinfo: :compact t
+- Key: n (vellumory-diff-next) :: Next changed page.
+- Key: p (vellumory-diff-previous) :: Previous changed page.
+- Key: TAB :: Next button.
+
+~vellumory diff OLD NEW~ prints the same comparison as JSON.
+
+* Org mode and LaTeX
+:PROPERTIES:
+:DESCRIPTION: Links, accessible PDF export, SyncTeX, org-noter.
+:END:
+#+cindex: Org mode
+#+cindex: LaTeX
+
+Vellumory fits into the way many Emacs users write: notes in Org, papers
+in LaTeX.  Links from your notes open the exact place in a document, Org
+exports to PDF that is accessible and archival at once, LaTeX sources and
+their PDF point to each other, and org-noter sessions run on Vellumory.
+
+** Org links
+#+cindex: Org links
+#+cindex: vellumory links
+#+cindex: org-store-link
+
+Org learns a new link type, =vellumory:=, as soon as Org's link library
+loads (after ~vellumory-install~).
+
+To link to a place, run ~org-store-link~ in a document, then insert the link
+in your notes with ~org-insert-link~ (~C-c C-l~).  The link records the exact
+place, page and height:
+
+#+begin_example
+[[vellumory:~/papers/paper.pdf::7::312.5][“the trace tree”]]
+#+end_example
+
+That is page 7, 312.5 points from the top of the page.  The description is
+the selected text, if you selected some; otherwise the nearest heading of
+the document's contents with the page label; otherwise the file name and
+page.
+
+Following the link opens the document at that place, and
+~vellumory-history-back~ returns to where you were.  When you insert a link
+with ~C-c C-l~ and choose the =vellumory:= type, Vellumory asks for the
+document and the page.
+
+When Org exports a =vellumory:= link to HTML or Markdown, it becomes a link
+to =FILE#page=N=, which browsers open at the page; LaTeX gets the same
+through =\href=.  Other back-ends get the description alone.
+
+#+cindex: org-pdftools
+Notes written with org-pdftools use =pdf:= links, such as
+=pdf:paper.pdf::7++0.42=.  Vellumory opens them, at the page and the height
+fraction, provided no other package has defined =pdf:= links by the time
+Vellumory's Org support loads (org-pdftools itself does, for pdf-tools).  Links to annotations or searches open their page.
+
+** Exporting Org to accessible PDF
+#+cindex: Org export
+#+cindex: accessible PDF
+#+cindex: LuaLaTeX
+#+cindex: tagged PDF
+
+Vellumory adds an Org export that produces PDF 2.0 that is accessible and
+archival at the same time: PDF/UA-2, with a tagged structure (and MathML
+for formulas), and PDF/A-4f.  It uses LuaLaTeX with LaTeX's new
+=\DocumentMetadata= interface.
+
+#+attr_texinfo: :compact t
+- Key: C-c C-e l v :: In the Org export dispatcher, the entry "As
+  accessible, archival PDF (Vellumory, validated)".
+- Key: M-x vellumory-org-export-pdf :: The same as a command.  With a
+  prefix argument, export only the subtree at point.
+
+What happens:
+
+1. Org writes LaTeX with a =\DocumentMetadata= line naming the document's
+   language, the standards in ~vellumory-org-export-standards~ (by default
+   =ua-2= and =a-4f=) and tagging, and LuaLaTeX compiles it.
+2. The Org source is attached to the PDF (see [[*The Org source inside the
+   PDF]]).
+3. The PDF opens in Vellumory, and veraPDF validates it against each
+   standard.  The echo area reports the results, for example
+   =UA-2 ✓, A-4F ✓=; a standard that is missed opens its validation report.
+
+The language comes from the file's =#+LANGUAGE:= line, and must be a
+language tag such as =en-GB=; otherwise Vellumory asks you to fix it.  A
+=#+LATEX_CLASS_PRE:= line in the file takes precedence over Vellumory's
+=\DocumentMetadata= line, so you can set it yourself.  To target other
+standards, change ~vellumory-org-export-standards~ (for example to
+~("a-2b")~).
+
+This needs LuaLaTeX from TeX Live 2025 or newer, with the LaTeX tagging
+code (the packages latex-lab, tagpdf, pdfmanagement-testphase and luamml).
+The project's flake pins such a TeX Live, and a test checks that veraPDF
+accepts a real Org document (headings, a list, a table, a link, inline and
+display mathematics) as PDF/UA-2, tagged, and PDF/A-4f.
+
+** Exporting with Typst
+#+cindex: Typst
+
+If you prefer not to install TeX, Typst can do the same job.
+
+#+attr_texinfo: :compact t
+- Key: C-c C-e y v :: In the export dispatcher (with the ox-typst package),
+  the entry "As PDF/A-3a and PDF/UA-1 (Vellumory, validated)".
+- Key: M-x vellumory-org-export-typst :: The same as a command.
+
+ox-typst writes Typst, and =typst compile --pdf-standard a-3a,ua-1= makes a
+tagged PDF/A-3a that is also PDF/UA-1.  Typst refuses images without
+alternative text, which is what accessibility asks for anyway.  The
+language comes from =#+LANGUAGE:=; a region such as =en-GB= is passed the way
+Typst wants it.  The result is validated against both standards and
+opened, as with LaTeX.  ~vellumory-org-typst-standards~ chooses the
+standards; Typst's PDF/UA-1 cannot be combined with PDF/A-4.  This needs
+Typst 0.14 or newer (0.15.1 is the tested version) and the ox-typst
+package.
+
+** The Org source inside the PDF
+#+cindex: embedded source
+#+cindex: associated files
+
+Both export routes attach the Org text to the PDF as its source file: an
+associated file with the relationship Source and the type =text/x-org=.
+Whoever has the PDF has what made it.  The text is the buffer as you
+exported it, saved or not.
+
+The attachment is an ordinary edit, so it appears in the PDF's history and
+can be undone.  Standards that forbid it (PDF/A-1, PDF/A-2 and plain
+PDF/A-4) get no attachment.  ~vellumory-org-export-embed-source~ turns this
+off.
+
+** SyncTeX and AUCTeX
+#+cindex: SyncTeX
+#+cindex: AUCTeX
+#+cindex: forward search
+#+cindex: backward search
+
+SyncTeX connects a LaTeX source and its PDF: from a line of source to the
+place it appears, and back.  Vellumory reads SyncTeX data with TeX Live's
+libsynctex, the parser that Skim, Sumatra and Texworks use.  Compile with
+SyncTeX on (in AUCTeX, turn on ~TeX-source-correlate-mode~), so that a
+=.synctex.gz= file lies next to the PDF.
+
+With AUCTeX, Vellumory becomes the PDF viewer when a TeX buffer starts
+(~vellumory-sync-tex-viewer~).  It sets itself up after every other viewer
+configuration, Doom's =:lang latex= included.
+
+#+attr_texinfo: :compact t
+- Key: C-c C-v :: In a TeX buffer, AUCTeX's ~TeX-view~: show the PDF with the
+  line at point highlighted on its page.  This needs
+  ~TeX-source-correlate-mode~; without it, the PDF simply opens.  Region
+  compilation works too.
+- Key: M-x vellumory-sync-forward :: The same without AUCTeX: show where the
+  source line at point appears.  The PDF is the file of the same name with
+  the extension =.pdf=.
+- Key: C-mouse-1 (vellumory-sync-backward) :: In a document, visit the
+  source line that produced the point you click.
+
+The found lines are highlighted for ~vellumory-sync-flash-seconds~, and
+~vellumory-sync-context-points~ of the page are kept visible above them.
+If the source file has moved, Vellumory looks for a file of the same name
+next to the PDF.
+
+** org-noter
+#+cindex: org-noter
+
+org-noter keeps notes in step with a document.  Once org-noter is loaded,
+its sessions run on Vellumory documents:
+
+- the notes follow the page in view;
+- a note opens its page, at its height;
+- precise notes start at the selected text, or at a click on any visible
+  page, not only the top one;
+- the selected text starts the note's text;
+- ~org-noter-create-skeleton~ turns the document's contents into headings.
+
+Locations are stored in org-noter's own form, so notes made with other
+org-noter back-ends keep working.  With evil, org-noter's ~i~, ~C-i~ and ~q~
+take precedence over the reader's keys during a session.
+
+* Batch work in Dired
+:PROPERTIES:
+:DESCRIPTION: Validate, edit, summarize and merge many documents.
+:END:
+#+cindex: Dired
+#+cindex: batch processing
+#+findex: vellumory-batch-mode
+
+Mark documents in Dired, then press ~;~ followed by a letter
+(~vellumory-dired-key~ changes the prefix).
+
+#+attr_texinfo: :compact t
+- Key: ; v (vellumory-dired-validate) :: Validate the marked documents
+  against one profile, in a single veraPDF run.
+- Key: ; e (vellumory-dired-edit) :: Apply one edit to each marked
+  document: compress losslessly, linearize, recognize text, set the
+  language, set the author, show the title in viewers' title bars, or
+  remove page labels.  Each edit is recorded in that document's own history
+  and can be undone there.
+- Key: ; i (vellumory-dired-info) :: Summarize the marked documents: pages,
+  format, claimed standards, tagging, language and size.
+- Key: ; m (vellumory-dired-merge) :: Merge the marked documents, in Dired's
+  order, into a new document.  Document-level data, such as metadata, comes
+  from the first.
+- Key: ; o (vellumory-occur-documents) :: List the lines matching a regular
+  expression in all marked documents (see [[*Listing every match]]).
+- Key: ; V (vellumory-virtual-create) :: Start a virtual document that reads
+  the marked documents in order (see [[*Virtual documents]]).
+
+The results appear in a table, =*Vellumory batch*=:
+
+#+attr_texinfo: :compact t
+- Key: RET (vellumory-batch-visit) :: Open the document on this line.
+- Key: v (vellumory-batch-report) :: Show the full validation report of the
+  document on this line.
+- Key: g (vellumory-batch-rerun) :: Run the batch again.
+
+In a validation batch, a file that cannot be read still gets its row,
+with the error.  In Doom,
+the same commands are on the localleader under ~v~ (see [[*The Doom module]]).
+
+* The command line
+:PROPERTIES:
+:DESCRIPTION: The vellumory program: inspect, validate and edit from scripts.
+:END:
+#+cindex: command line
+#+cindex: scripting
+
+The worker is also a command line tool.  Everything the reader does with
+documents, scripts can do too, with the same results and the same
+history.
+
+#+begin_example
+vellumory [SUBCOMMAND] [FLAGS]
+#+end_example
+
+=vellumory --help= lists the subcommands, and =vellumory SUBCOMMAND --help=
+describes each one.  =--version= prints the worker's version.
+
+Most subcommands print JSON on standard output.  When something goes
+wrong, they print ={"error": "…"}= on standard error and exit with status 1.
+The exit status tells you whether the command worked, not what it found:
+a document that fails validation still exits with 0, and the =compliant=
+field of the report gives the verdict.
+
+** Inspecting from the command line
+#+cindex: command line, inspecting
+
+- ~vellumory info FILE~ :: The details report: format, structure, metadata,
+  fonts, images and attachments, as JSON.
+- ~vellumory text FILE~ :: The text of every page; pages are separated by
+  form feeds.
+- ~vellumory annotations FILE~ :: The annotations (not links or form fields)
+  with their pages, as JSON.
+- ~vellumory form FILE~ :: The form fields: name, type, value and choices.
+- ~vellumory signatures FILE~ :: Verify every signature: integrity of the
+  signed bytes, trust of the signer.
+- ~vellumory preflight FILE~ :: The checks beyond veraPDF (see [[*Checks beyond
+  veraPDF]]).
+- ~vellumory validate [-f FLAVOUR] FILE~ :: Validate with veraPDF and print a
+  normalized report.  The flavours are =0= (detect from the document's
+  metadata, the default), =1a= =1b= =2a= =2b= =2u= =3a= =3b= =3u= =4= =4e= =4f=
+  =ua1= =ua2= =wt1r= =wt1a=.
+- ~vellumory batch-validate [-f FLAVOUR] FILE…~ :: Validate many documents in
+  one veraPDF run and print one result per file.  With =0=, each file is
+  checked against its own claim.
+- ~vellumory check FILE~ :: qpdf's structural check, with qpdf's own output
+  and exit codes (0 for clean, 2 for errors, 3 for warnings).
+- ~vellumory qdf FILE~ :: Write the editable QDF rendering to the cache and
+  print its path.
+- ~vellumory diff OLD NEW~ :: The semantic comparison (see [[*Comparing
+  versions]]): pages paired, changed words with their positions, structure.
+
+For example, the beginning of a validation report:
+
+#+begin_example
+$ vellumory validate -f 1b paper.pdf
+{"compliant":false,"profile":"PDF/A-1b validation profile",
+ "statement":"PDF file is not compliant with Validation Profile requirements.",
+ "passed_rules":123,"failed_rules":6, …}
+#+end_example
+
+** Editing from the command line
+#+cindex: command line, editing
+
+- ~vellumory edit FILE OPERATION~ :: Apply a recorded, reversible edit, given
+  as JSON (next section).  The file is replaced atomically, and every state
+  stays in the store.  Write =-= instead of the operation to read it from
+  standard input; operations that carry passwords should always be passed
+  that way.
+- ~vellumory undo FILE~ :: Restore the state before the last edit.
+- ~vellumory redo FILE~ :: Return to the most recent state after the current
+  one.
+- ~vellumory history FILE~ :: Print the branching history as JSON: every
+  state with its index, parent, time, label, operation and hash.
+- ~vellumory checkout FILE N~ :: Make state N current.  Nothing is discarded.
+- ~vellumory snapshot FILE N~ :: Print the path of state N's snapshot in the
+  store, without changing the file.
+
+Each edit prints a short summary, such as:
+
+#+begin_example
+$ vellumory edit paper.pdf '{"op":"rotate","pages":[1],"degrees":90}'
+{"changed":true,"head":1,"node":{"hash":"a428dc90…","parent":0,
+ "operation":{"op":"rotate","pages":[1],"degrees":90},
+ "label":"rotate pages 1 by +90° (14 pages)","index":1,…},"nodes":2}
+#+end_example
+
+The reader and the command line share the store and the history, so an
+edit made in a script can be undone in Emacs, and the other way round.
+
+** Edit operations
+#+cindex: edit operations
+#+cindex: JSON operations
+
+An operation is a JSON object whose =op= field names it.  Pages are
+numbered from 1.
+
+| =op=                | Fields                                                                    |
+|---------------------+---------------------------------------------------------------------------|
+| =select=            | =pages=: the pages to keep, in order (reorders, deletes, duplicates)        |
+| =rotate=            | =pages=, =degrees= (a multiple of 90; positive is clockwise)                |
+| =append=            | =files=: documents whose pages are appended                               |
+| =compress=          | none                                                                      |
+| =linearize=         | none                                                                      |
+| =labels=            | =specs=: qpdf page-label specifications, such as =["1:r", "5:D"]=          |
+| =remove-labels=     | none                                                                      |
+| =attach=            | =file=, =key=, optional =description= and =relationship=                     |
+| =detach=            | =key=                                                                     |
+| =metadata=          | =set= (an object), =remove= (a list), =date= (ISO 8601)                     |
+| =ocr=               | =languages= (default =eng=), =mode= (=skip=, =redo= or =force=)                |
+| =stamp=             | =file=, =under= (default false), =pages= (default =1-z=)                      |
+| =encrypt=           | =user=, =owner=, =print= (=full=, =low=, =none=), =modify=, =extract=          |
+| =decrypt=           | =password=                                                                |
+| =fill-form=         | =values=: an object of field names and values                             |
+| =annotate=          | =page=, =kind=, =quads= or =rect=, =color=, =contents=, =author=, =time=        |
+| =annotation-edit=   | =page=, =object=, =contents=, =time=                                        |
+| =annotation-delete= | =page=, =object=                                                          |
+| =syntax=            | =qdf=: the path of an edited QDF file                                     |
+
+The metadata fields are =title=, =author=, =subject=, =keywords=, =creator=,
+=producer=, =language= (a language tag such as =en-GB=), =display-title=
+(="true"= or ="false"=) and =created= (an ISO 8601 date).  =modify= is one of
+=all=, =annotate=, =form=, =assembly= or =none=, and =extract= (true or false)
+allows copying.  Annotation kinds are =Highlight=, =Underline=, =StrikeOut=,
+=Squiggly= (on =quads=, eight numbers per marked line) and =Text= (at =rect=).
+
+Some examples:
+
+#+begin_example
+vellumory edit report.pdf '{"op":"select","pages":[3,1,2]}'
+vellumory edit report.pdf '{"op":"metadata","set":{"title":"Annual report","language":"en-GB"},"remove":["keywords"],"date":"2026-10-28T06:00:00+01:00"}'
+vellumory edit scan.pdf '{"op":"ocr","languages":"deu+eng","mode":"skip"}'
+echo '{"op":"encrypt","user":"","owner":"secret","print":"full","modify":"none","extract":true}' | vellumory edit report.pdf -
+#+end_example
+
+qpdf receives passwords through private files, never on its command line.
+
+** Pages in and out
+#+cindex: merging documents
+
+- ~vellumory extract FILE PAGES OUTPUT~ :: Write the pages to a new document,
+  keeping outlines and tags.  =PAGES= is a qpdf page range, such as =1-3,7=,
+  =r1= (the last page) or =1-z:odd=.
+- ~vellumory split FILE N PATTERN~ :: Split into documents of N pages; =%d= in
+  the pattern becomes the page range, as in =out/part-%d.pdf=.
+- ~vellumory merge OUTPUT FILE…~ :: Concatenate documents into a new one;
+  document-level data comes from the first.
+- ~vellumory compose~ :: Compose pages of several documents into one, as
+  virtual documents do.  It reads a JSON list of parts from standard input,
+  each with =file=, =first=, =last= (0 for the last page) and an optional
+  =region= of four fractions (left, top, right, bottom), and prints the path
+  of the cached result.
+
+These leave their inputs unchanged.
+
+** SyncTeX from the command line
+
+- ~vellumory synctex [-c COLUMN] FILE SOURCE LINE~ :: Where a source line
+  appears in the PDF (forward search).  =FILE= is the PDF, next to its
+  =.synctex.gz=.
+- ~vellumory synctexback FILE PAGE X Y~ :: Which source produced a point on a
+  page (backward search), with =X= and =Y= in points from the left and top
+  edges.
+
+** For developers
+- ~vellumory serve~ :: Serve the reader's protocol, JSON lines on standard
+  input and output.  This is how Emacs talks to the worker; the protocol is
+  internal and may change between versions.
+- ~vellumory clip HEIGHT TOP BOTTOM~ :: Plan a clipped raster interval with
+  the proved integer geometry; a small demonstration of the proofs at
+  work.
+
+** Environment variables
+#+cindex: environment variables
+#+cindex: XDG directories
+
+| Variable                         | Meaning                                                                  |
+|----------------------------------+--------------------------------------------------------------------------|
+| =VELLUMORY_STORE=                | where snapshots and histories live (default =$XDG_DATA_HOME/vellumory=)  |
+| =XDG_DATA_HOME=                  | base of the store (default =~/.local/share=)                             |
+| =XDG_CACHE_HOME=                 | base of the worker's caches: previews, QDF, virtual documents, attachments |
+| =XDG_RUNTIME_DIR=                | where the session's rendered strips are kept (falls back to the cache)   |
+| =VELLUMORY_RENDER_THREADS=       | render threads, 1 to 16 (default: cores minus two, from 2 to 6)          |
+| =VELLUMORY_RUNTIME_BUDGET_MB=    | most memory for the session's strips (default 128, and at most a quarter of the free space there) |
+| =VELLUMORY_PERSISTENT_BUDGET_MB= | most disk for previews kept across sessions (default 256)                |
+
+The reader's own files (saved places, and the cache of remote documents
+and conversions) follow ~vellumory-state-directory~ and
+~vellumory-cache-directory~ instead (see [[*Customization]]).
+
+* Evil and Doom Emacs
+:PROPERTIES:
+:DESCRIPTION: Normal-state keys, and the Doom module.
+:END:
+#+cindex: evil
+#+cindex: vim keys
+
+Vellumory has full evil support, modelled on evil-collection's keys for
+pdf-tools, and a Doom Emacs module that wires everything together.
+
+** Setting up evil
+#+findex: vellumory-evil-setup
+
+#+begin_src emacs-lisp
+(with-eval-after-load 'evil
+  (require 'vellumory-evil)
+  (vellumory-evil-setup))
+#+end_src
+
+~vellumory-evil-setup~ starts documents, the contents, the page previews and
+reading mode in normal state, and presentations in Emacs state (a presentation takes
+every key itself).  It hides evil's cursor over pages, keeps a mouse
+selection from entering visual state, and rebinds the mouse in normal state
+so that selecting text works.  evil-snipe is turned off in documents and
+their sidebars, where ~s~, ~f~ and ~t~ mean the sidebar, links and previews.
+The Doom module does all of this for you.
+
+** Normal state keys
+#+cindex: evil keys
+#+kindex: C-e (evil)
+#+kindex: C-y (evil)
+#+kindex: C-d (evil)
+#+kindex: C-u (evil)
+#+kindex: C-f (evil)
+#+kindex: C-b (evil)
+#+kindex: J (evil)
+#+kindex: K (evil)
+#+kindex: gj (evil)
+#+kindex: gk (evil)
+#+kindex: ]] (evil)
+#+kindex: [[ (evil)
+#+kindex: gg (evil)
+#+kindex: G (evil)
+#+kindex: gp (evil)
+#+kindex: gl (evil)
+#+kindex: h (evil)
+#+kindex: l (evil)
+#+kindex: 0 (evil)
+#+kindex: ^ (evil)
+#+kindex: $ (evil)
+#+kindex: C-o (evil)
+#+kindex: C-i (evil)
+#+kindex: m (evil)
+#+kindex: ' (evil)
+#+kindex: ` (evil)
+#+kindex: zi (evil)
+#+kindex: zo (evil)
+#+kindex: z0 (evil)
+#+kindex: zw (evil)
+#+kindex: zp (evil)
+#+kindex: zc (evil)
+#+kindex: zs (evil)
+#+kindex: zd (evil)
+#+kindex: zm (evil)
+#+kindex: gP (evil)
+#+kindex: ? (evil)
+#+kindex: n (evil)
+#+kindex: N (evil)
+#+kindex: F (evil)
+#+kindex: O (evil)
+#+kindex: t (evil)
+#+kindex: T (evil)
+#+kindex: I (evil)
+#+kindex: D (evil)
+#+kindex: gS (evil)
+#+kindex: u (evil)
+#+kindex: C-r (evil)
+#+kindex: U (evil)
+#+kindex: g? (evil)
+#+kindex: gr (evil)
+#+kindex: ZZ (evil)
+#+kindex: ZQ (evil)
+#+kindex: Q (evil)
+#+kindex: zr (evil)
+#+findex: vellumory-evil-scroll-line-down
+#+findex: vellumory-evil-scroll-line-up
+#+findex: vellumory-evil-goto-first-page
+#+findex: vellumory-evil-goto-last-page
+#+findex: vellumory-evil-hscroll-start
+#+findex: vellumory-evil-hscroll-end
+#+findex: vellumory-evil-search-backward
+
+Moving around:
+
+| Keys                                     | What they do                                     |
+|------------------------------------------+--------------------------------------------------|
+| ~j~ ~k~ (also ~<down>~ ~<up>~)               | scroll a little                                  |
+| ~C-e~ ~C-y~                                  | scroll by a line of text                         |
+| ~C-d~ ~C-u~                                  | scroll half a screen                             |
+| ~C-f~ ~C-b~ (also ~SPC~ ~S-SPC~ ~DEL~)           | scroll a screen                                  |
+| ~J~ ~K~, ~gj~ ~gk~, ~]]~ ~[[~                    | next and previous page                           |
+| ~gg~ ~G~                                     | first and last page; with a count, that page     |
+| ~gp~                                       | go to a page by number                           |
+| ~gl~                                       | go to a page by label                            |
+| ~h~ ~l~ (also ~<left>~ ~<right>~)              | scroll sideways                                  |
+| ~^~, ~$~                                      | show the left edge, the right edge of the page   |
+| ~C-o~, ~C-i~ (or ~TAB~)                        | back and forward through jumps                   |
+| ~m~ /letter/, ~'~ or ~`~ /letter/             | store the place in a register, return to it      |
+
+Viewing:
+
+| Keys                        | What they do                           |
+|-----------------------------+----------------------------------------|
+| ~zi~ ~+~ ~=~, ~zo~ ~-~          | zoom in, zoom out                      |
+| ~z0~ ~zw~ ~W~                   | fit the width                          |
+| ~0~                           | the fitted page, or back to your zoom  |
+| ~zp~ ~P~ ~H~                    | fit the page                           |
+| ~zc~                          | fit the content width                  |
+| ~zs~                          | two pages: single, book, pairs         |
+| ~zd~                          | night mode                             |
+| ~zm~                          | cycle the page colours                 |
+| ~zr~                          | reading mode                           |
+| ~gP~                          | present full screen                    |
+
+Finding and text:
+
+| Keys          | What they do                                          |
+|---------------+-------------------------------------------------------|
+| ~/~, ~?~        | find text forward, or find and go backward            |
+| ~n~ ~N~         | next and previous match                               |
+| ~f~ ~F~         | follow a visible link by its label                    |
+| ~o~           | contents sidebar                                      |
+| ~O~           | go to a heading                                       |
+| ~s~           | switch the sidebar                                    |
+| ~t~           | page previews                                         |
+| ~T~           | text of the page                                      |
+| ~v~           | select with the keyboard caret                        |
+| ~y~           | copy the selection                                    |
+
+Inspecting, editing and the rest:
+
+| Keys            | What they do                                   |
+|-----------------+------------------------------------------------|
+| ~I~             | document details                               |
+| ~V~             | validate                                       |
+| ~gS~            | PDF syntax view                                |
+| ~D~             | compare with an earlier version                |
+| ~u~, ~C-r~        | undo, redo                                     |
+| ~U~             | history tree                                   |
+| ~e~ ...           | the edit keys, as in plain Emacs               |
+| ~a~ ...           | the annotation keys, as in plain Emacs         |
+| ~g?~            | the menu of all commands                       |
+| ~gr~ ~r~          | reload                                         |
+| ~q~ ~ZZ~          | quit the window                                |
+| ~ZQ~ ~Q~          | kill the buffer                                |
+
+Note two differences from plain Emacs: with evil, ~t~ shows the page
+previews and ~T~ the page text (the other way round from plain Emacs), and
+~?~ searches backward, so the menu is on ~g?~ (~C-c C-v~ works in both).  The
+mouse works as in plain Emacs.
+
+** Sidebars and views under evil
+
+In the contents sidebar: ~RET~ or ~go~ follows a heading, ~TAB~ folds and
+~<backtab>~ cycles the whole outline, ~j~ and ~k~ move between headings, ~s~
+switches to the previews, and ~q~ or ~o~ closes it.  In the page previews:
+~RET~ visits a page, ~j~ and ~k~ move, ~s~ switches to the contents, and ~q~ or
+~t~ closes them.  Marking pages for export works as in plain Emacs: ~m~ marks
+the page at point, ~u~ unmarks it, ~U~ clears every mark and ~x~ exports the
+marked pages.
+
+#+kindex: zr (evil reading mode)
+#+kindex: gO (evil reading mode)
+#+kindex: g? (evil reading mode)
+In reading mode the motions are evil's own, since it is text: ~j~, ~k~, ~C-f~,
+~C-b~, ~gg~, ~G~ and the rest move through it as through any buffer.  On top of
+them: ~q~ or ~zr~ returns to the pages, ~]]~ and ~[[~ go to the next and previous
+page, ~gO~ to a heading of the contents, ~+~ and ~-~ change the text size and ~=~
+resets it, ~C~ cycles the colours, ~TAB~ and ~<backtab>~ move between links, and
+~?~ or ~g?~ opens reading mode's menu.
+
+The keyboard caret's keys (see [[*With the keyboard caret]]) take precedence
+over normal state while the caret is active.  In Vellumory's other buffers,
+such as the history tree, the validation report, the comparison, the
+details, the occur list, the syntax view, the batch table and the
+annotation list, each buffer's own keys take precedence over normal
+state.  So ~c~ in the history tree makes a state current rather than
+starting evil's change operator.  In the syntax view, ~q~ closes the view
+while it is read-only.
+
+** The Doom module
+#+cindex: Doom Emacs
+#+cindex: localleader
+
+Doom's =:tools vellumory= module (see [[*Doom Emacs]] for installing it) sets
+up:
+
+- lazy loading: only the small file associations load at startup, and the
+  reader loads with the first document;
+- evil, when =:editor evil= is enabled;
+- a doom-modeline segment with the page, the zoom, the search status and
+  the caret, instead of the header line;
+- a popup rule that shows page text on the right;
+- document buffers as "real" buffers, so they join workspaces and appear in
+  ~switch-to-buffer~ (the sidebars do not);
+- ~ESC~ clearing search highlights first, then the selection;
+- localleader keys with which-key descriptions, listed below;
+- with =:lang latex=, Vellumory as AUCTeX's viewer, so ~SPC m v~ in a TeX
+  buffer shows the line at point;
+- in Org, ~SPC n l~ (~org-store-link~) stores the exact place in a document.
+
+The localleader (~SPC m~ in Doom's default evil setup) in a document:
+
+| Key | Command                        | Key   | Command                             |
+|-----+--------------------------------+-------+-------------------------------------|
+| ~o~   | contents                       | ~i~     | document details                    |
+| ~t~   | page previews                  | ~v~     | validate                            |
+| ~h~   | go to heading                  | ~d~     | PDF syntax                          |
+| ~g~   | go to page                     | ~=~     | compare versions                    |
+| ~l~   | go to page label               | ~c~     | cycle page colours                  |
+| ~s~   | find text                      | ~w~     | fit width                           |
+| ~S~   | clear search                   | ~p~     | fit page                            |
+| ~f~   | follow link                    | ~2~     | two pages                           |
+| ~y~   | copy selection                 | ~O~     | occur (all matches)                 |
+| ~T~   | page text                      | ~r~     | reload                              |
+| ~?~   | all commands                   | ~[~ ~]~   | back, forward                       |
+| ~M~   | this manual                    | ~!~     | check the setup (doctor)            |
+
+The localleader prefixes ~e~ (edit), ~a~ (annotate) and ~x~ (export) hold the
+same commands as the plain Emacs keys: ~e r~ rotates, ~e u~ undoes, ~a h~
+highlights, ~x x~ extracts pages, ~x s~ splits and ~x t~ exports the text.
+
+In Dired, the localleader prefix ~v~ acts on the marked documents: ~v v~
+validates, ~v e~ edits each, ~v i~ summarizes and ~v m~ merges.  The ~;~ keys of
+plain Emacs work as well.
+
+#+kindex: SPC m (Doom)
+#+kindex: SPC m v (Doom Dired)
+#+kindex: SPC n l (Doom)
+
+* Customization
+:PROPERTIES:
+:DESCRIPTION: Every user option, with its default.
+:END:
+#+cindex: customization
+#+cindex: options
+
+Every option can be set with Customize (~M-x customize-group RET vellumory~,
+or ~,~ in the command menu) or with ~setq~ in your init file.  The defaults
+are chosen to work well without any configuration.  The group ~vellumory~
+holds general options and the subgroups ~vellumory-reader~,
+~vellumory-reflow~, ~vellumory-thumbnails~, ~vellumory-select~,
+~vellumory-annotate~, ~vellumory-present~, ~vellumory-sync~ and
+~vellumory-syntax~.
+
+A small example:
+
+#+begin_src emacs-lisp
+(setq vellumory-spread 'book            ; two pages, as a book opens
+      vellumory-theme 'tint             ; pages in the theme's colours
+      vellumory-show-thumbnails nil     ; no page previews at first
+      vellumory-confirm-external-links nil)
+#+end_src
+
+** Files and formats
+
+- User Option: vellumory-file-extensions :: File extensions that
+  ~vellumory-install~ opens in Vellumory.  Default: ~("pdf" "xps" "oxps"
+  "cbz" "fb2" "epub")~.
+- User Option: vellumory-converters :: How other formats become PDF: a list
+  of ~(EXTENSIONS PROGRAM ARGUMENT…)~.  Among the arguments, ~input~ and
+  ~output~ stand for the files, and ~directory~ for a directory into which the
+  program writes the input's name with the extension =.pdf=.  An entry whose
+  program is not installed is skipped.  Default: DVI with dvipdfmx,
+  PostScript and EPS with ps2pdf, DjVu with ddjvu, and odt, ods, odp, odg,
+  doc, docx, xls, xlsx, ppt, pptx and rtf with LibreOffice's soffice.
+- User Option: vellumory-converted-not-visited :: Converted formats that
+  ~vellumory-install~ does not open as documents, because they are usually
+  edited.  Default: ~("ps" "eps")~.
+- User Option: vellumory-visit-without-reading :: Visit local documents
+  without reading their bytes into the buffer; the worker reads the file
+  itself.  This saves time and memory in proportion to the file's size.
+  Default: ~t~.
+- User Option: vellumory-dired-key :: The Dired prefix for batch commands on
+  marked documents, or ~nil~ for none.  Default: ~";"~.
+- User Option: vellumory-program :: The worker program.  Default: the worker
+  installed beside the Lisp files, if there is one, otherwise ~"vellumory"~
+  on your =exec-path=.
+- User Option: vellumory-state-directory :: Where reading positions are
+  kept.  Default: =vellumory= in =$XDG_STATE_HOME=, or =~/.local/state/vellumory=.
+- User Option: vellumory-cache-directory :: Where the reader caches remote
+  and in-memory documents and conversions, by content.  Default:
+  =vellumory= in =$XDG_CACHE_HOME=, or =~/.cache/vellumory=.  The worker's own
+  caches (previews, QDF files, virtual documents, attachments) follow
+  =XDG_CACHE_HOME=, not this option.
+- User Option: vellumory-watch-file :: Reload a document when its file
+  changes, after a brief quiet period.  Default: ~t~.
+
+** Page layout and appearance
+
+- User Option: vellumory-spread :: How documents open: ~nil~ for single
+  pages, ~book~ for two pages as a printed book opens (the first page alone),
+  ~pairs~ for two pages from the first.  ~2~ cycles them.  Default: ~nil~.
+- User Option: vellumory-spread-gap :: Pixels between the two pages of a
+  spread.  Default: ~8~.
+- User Option: vellumory-page-gap :: Pixels between pages.  Default: ~14~.
+- User Option: vellumory-follow-document-display :: Open documents as they
+  ask: two pages for a layout of two columns or pages (unless
+  ~vellumory-spread~ is set), the contents for a document that asks for its
+  outline.  Default: ~t~.
+- User Option: vellumory-theme :: Page colours: ~nil~ for the original, ~tint~
+  for the theme's foreground and background, ~invert~ for inverted
+  brightness (dark pages, hues kept), ~auto~ for inverted while the Emacs
+  theme is dark and the original while it is light.  ~C-c C-d~ cycles the
+  first three, and ~vellumory-night-mode~ inverts one document's pages.
+  Default: ~nil~.
+- User Option: vellumory-content-padding :: Pixels of paper kept on each
+  side when fitting the content to the window (~c~).  Default: ~12~.
+- User Option: vellumory-header-line :: Show the page, zoom and status in
+  the header line.  Default: ~t~.
+- User Option: vellumory-smooth-scroll :: Animate scrolling by screens.
+  Default: ~t~.
+- User Option: vellumory-smooth-scroll-duration :: Seconds an animated
+  scroll takes.  Default: ~0.11~.
+
+** EPUB and other reflowable books
+
+- User Option: vellumory-reflow-text-size :: Points of text in EPUB and FB2
+  books.  The text-scale keys change it for the book in view.  Default: ~11~.
+- User Option: vellumory-reflow-page-size :: Width and height, in points, of
+  the pages books are laid out on.  Default: ~(450 . 600)~.
+- User Option: vellumory-reflow-stylesheet :: A CSS file applied to books, as
+  DocView's EPUB user stylesheet.  Default: ~nil~.
+
+These three lay out EPUB and FB2 books on pages.  Reading mode, which
+reflows any document to the window, has options of its own (next
+section).
+
+** Reading mode options
+
+- User Option: vellumory-reflow-measure :: The most characters in a line of
+  reflowed text, or ~nil~ for the window's width.  Lines of 60 to 75
+  characters read best, and narrower windows get shorter lines.  ~{~ and ~}~
+  change it for the document in view.  Default: ~70~.
+- User Option: vellumory-reflow-variable-pitch :: Set reflowed text in the
+  proportional ~variable-pitch~ font.  Default: ~t~.
+- User Option: vellumory-reflow-line-spacing :: Extra space between lines of
+  reflowed text: a fraction of a line, a number of pixels, or ~nil~ for
+  none.  Default: ~0.3~.
+- User Option: vellumory-reflow-images :: Show figures, formulas and drawings
+  as pictures; ~nil~ shows their text.  ~I~ toggles it.  Default: ~t~.
+- User Option: vellumory-reflow-running-text :: Show running heads, page
+  numbers and other text outside the content.  ~H~ toggles it.  Default:
+  ~nil~.
+- User Option: vellumory-reflow-page-breaks :: Mark where each page begins.
+  ~B~ toggles it.  Default: ~t~.
+- User Option: vellumory-reflow-colours :: The colours of reflowed text:
+  ~auto~ (dark while the pages are inverted, the Emacs theme's colours
+  otherwise), ~theme~, ~paper~, ~sepia~ or ~night~.  ~C~ cycles them.  Default:
+  ~auto~.
+- User Option: vellumory-reflow-narrow-width :: Show a document in reading
+  mode in windows narrower than this many columns, and the pages again
+  once the window is wider; ~nil~ never does.  This option is in the group
+  ~vellumory-reader~.  Default: ~nil~.
+
+** Rendering
+
+These options tune the renderer.  The defaults come from measurements (see
+[[*Performance and how it is measured]]); change them only if you have a
+reason.
+
+- User Option: vellumory-strip-height :: Height in logical pixels of the
+  image strips pages are made of.  Taller strips make scrolling cheaper,
+  because redisplay costs about a millisecond per line of images in view.
+  On the ISO 32000 standard, 192-pixel strips gave a mean scroll step of
+  2.9 ms and a worst of 21–27 ms; 768-pixel strips 1.7 ms and under 5 ms,
+  without rendering more pixels.  Default: ~768~.
+- User Option: vellumory-tile-width :: Width of a tile when pages are wider
+  than the window, so that only the visible columns are rendered.  Default:
+  ~640~.
+- User Option: vellumory-refine-delay :: Seconds without motion before
+  previews are replaced by sharp tiles.  Default: ~0.09~.
+- User Option: vellumory-immediate-budget :: Render sharp tiles at once, even
+  while moving, if the worker's measured cost for this document says they
+  take less than this many milliseconds.  Default: ~14~.
+- User Option: vellumory-preview-scale :: Resolution of the whole-page
+  previews shown while moving, relative to sharp tiles.  Default: ~0.25~.
+- User Option: vellumory-prefetch-screens :: Screens rendered ahead of and
+  behind the direction of motion when Emacs is idle.  Default: ~(1.0 . 0.5)~.
+- User Option: vellumory-retain-screens :: Decoded images within this many
+  screens of a window are kept; those further away are released.  Default:
+  ~2.0~.
+- User Option: vellumory-gc-threshold :: The garbage collection threshold
+  while reading moves and while pages are laid out; garbage is collected
+  once reading rests.  Default: ~67108864~ (64 MiB).
+- User Option: vellumory-gc-idle-delay :: Seconds reading must rest before
+  the garbage it left is collected, so that collections do not fall into a
+  scroll step.  ~nil~ lets Emacs collect as usual.  When ~gcmh-mode~ is on (as
+  in Doom), Vellumory leaves collection to it.  Default: ~0.5~.
+
+** Page preview options
+
+- User Option: vellumory-show-thumbnails :: Show the page previews when a
+  document first opens.  Default: ~t~.
+- User Option: vellumory-thumbnail-width :: Largest width of a preview, in
+  pixels.  Default: ~136~.
+- User Option: vellumory-thumbnail-height :: Largest height of a preview, in
+  pixels.  Default: ~192~.
+
+** Links and search
+
+- User Option: vellumory-confirm-external-links :: Ask before opening a link
+  that leaves the document.  Default: ~t~.
+- User Option: vellumory-link-hint-keys :: The letters used to label links
+  for ~vellumory-follow-link~.  Default: ~"asdfghjklqwertyuiopzxcvbnm"~.
+- User Option: vellumory-occur-context :: Characters shown before a match in
+  the occur list; twice as many are shown after it.  Default: ~40~.
+- User Option: vellumory-link-preview :: Preview a link within the document
+  while the mouse rests on it.  Default: ~t~.
+- User Option: vellumory-link-preview-delay :: Seconds the mouse rests on a
+  link before its preview shows.  Default: ~0.3~.
+- User Option: vellumory-link-preview-size :: The size of a link preview, as
+  ~(WIDTH . HEIGHT)~, fractions of the window's width and height.  It shows
+  the target page at the size you read at, never more than the page.
+  Default: ~(0.92 . 0.35)~.
+
+** Annotations
+
+- User Option: vellumory-annotation-author :: The author recorded in new
+  annotations.  Default: your ~user-full-name~.
+- User Option: vellumory-annotation-colors :: The colour of each kind of
+  annotation, as red, green and blue from 0 to 1.  Default: ~((Highlight 1.0
+  0.85 0.2) (Underline 0.1 0.45 0.9) (StrikeOut 0.85 0.15 0.15) (Squiggly 0.2
+  0.65 0.3) (Text 1.0 0.85 0.2))~.
+
+** Presentations
+
+- User Option: vellumory-present-monitor :: Where to present: ~other~ prefers
+  a monitor without the selected frame (a projector), ~same~ uses the
+  selected frame's monitor.  Default: ~other~.
+- User Option: vellumory-present-background :: The colour around the pages.
+  Default: ~"black"~.
+- User Option: vellumory-present-transitions :: Draw the page transitions a
+  document asks for.  Default: ~t~.
+- User Option: vellumory-present-follow-durations :: Advance by itself after
+  a page's display time, as the document asks.  Default: ~t~.
+- User Option: vellumory-present-canvas :: Draw composed transitions on an
+  Emacs canvas image when Emacs has them.  Each frame then replaces the
+  pixels of one image in place, which was measured at 2 ms of Emacs time a
+  frame instead of 7 at 1278 × 958.  Default: ~t~.
+
+** SyncTeX
+
+- User Option: vellumory-sync-tex-viewer :: Make Vellumory AUCTeX's PDF viewer
+  when a TeX buffer starts.  Default: ~t~.
+- User Option: vellumory-sync-flash-seconds :: How long forward search
+  highlights the lines it found.  Default: ~1.5~.
+- User Option: vellumory-sync-context-points :: Points of the page kept
+  visible above a forward search result.  Default: ~72~.
+
+** PDF syntax
+
+- User Option: vellumory-syntax-size-warning :: Ask before showing a QDF
+  rendering larger than this many bytes.  Default: ~67108864~ (64 MiB).
+
+** Org export
+
+- User Option: vellumory-org-export-standards :: The standards an Org export
+  through LaTeX targets, as =\DocumentMetadata= names them.  Every export is
+  validated against each.  Default: ~("ua-2" "a-4f")~.
+- User Option: vellumory-org-typst-standards :: The standards an export
+  through Typst targets, as =typst compile --pdf-standard= names them.
+  Default: ~("a-3a" "ua-1")~.  Using =a-2a= instead of =a-3a= forbids the embedded
+  source.
+- User Option: vellumory-org-export-embed-source :: Attach the Org text to
+  the exported PDF as its source, where the target standards allow it.
+  Default: ~t~.
+
+** Faces
+#+cindex: faces
+#+cindex: colours
+
+| Face                           | Used for                                              |
+|--------------------------------+-------------------------------------------------------|
+| ~vellumory-desk~                 | the background between pages                         |
+| ~vellumory-paper~                | page areas not rendered yet                           |
+| ~vellumory-highlight-match~      | search matches                                        |
+| ~vellumory-highlight-current~    | the current search match                              |
+| ~vellumory-highlight-selection~  | selected text                                         |
+| ~vellumory-highlight-hint~       | link labels from ~vellumory-follow-link~                |
+| ~vellumory-highlight-added~      | text added since the version compared with            |
+| ~vellumory-diff-added~           | added text in the comparison buffer                   |
+| ~vellumory-diff-removed~         | removed text in the comparison buffer                 |
+| ~vellumory-details-heading~      | section headings of the details report                |
+| ~vellumory-details-label~        | field names in the details report                     |
+| ~vellumory-details-good~         | good properties in the details report                 |
+| ~vellumory-details-warning~      | properties worth your attention                       |
+| ~vellumory-marked~               | pages marked for export, in the previews              |
+| ~vellumory-reflow-paper~         | reading mode's paper colours                          |
+| ~vellumory-reflow-sepia~         | reading mode's sepia colours                          |
+| ~vellumory-reflow-night~         | reading mode's night colours                          |
+| ~vellumory-reflow-caption~       | captions of figures in reading mode                   |
+| ~vellumory-reflow-note~          | notes and asides in reading mode                      |
+| ~vellumory-reflow-running~       | running heads and page numbers, when shown            |
+| ~vellumory-reflow-page-break~    | the number where a page begins, in reading mode       |
+
+The highlight faces are drawn by the renderer onto the page: only their
+background colour counts.  The face ~vellumory-paper~ also gives the colour of
+unrendered pages; with theme colours or inverted pages, it is adjusted to
+the colour the paper will have.
+
+** Hooks
+#+cindex: hooks
+#+vindex: vellumory-mode-hook
+#+vindex: vellumory-page-change-functions
+#+vindex: vellumory-sync-backward-redirect-functions
+
+- ~vellumory-mode-hook~ runs when a document opens in the reader.  Every
+  other Vellumory mode has its hook too, such as
+  ~vellumory-history-mode-hook~.
+- ~vellumory-page-change-functions~ is called with the new page, counted from
+  0, whenever the page in view changes.  org-noter uses it.
+- ~vellumory-caret-mode-hook~, ~vellumory-follow-mode-hook~ and
+  ~vellumory-night-mode-hook~ run when those modes turn on or off, and
+  ~vellumory-reflow-mode-hook~ when a reading mode buffer is made.
+- ~vellumory-sync-backward-redirect-functions~ is called with the file, line
+  and column a backward search found; the first function that returns a new
+  list ~(FILE LINE COLUMN)~ replaces it.  AUCTeX's region compilation uses it.
+
+** What Vellumory changes in Emacs
+#+cindex: advice
+#+cindex: remapped commands
+
+So that nothing surprises you, here is every place where Vellumory
+changes how Emacs itself behaves:
+
+- ~vellumory-install~ adds a file name handler that visits documents
+  without reading their bytes into the buffer (only for whole-file visits
+  of files that open in Vellumory; ~vellumory-visit-without-reading~), and
+  advises ~abort-if-file-too-large~ to skip the large-file question for
+  documents.
+- ~recenter~ is advised: in a window showing a document it keeps the place
+  instead of scrolling.  Doom's window splits and evil's ~zz~ call it.
+- Reader buffers turn off ~bidi-display-reordering~, which they do not need,
+  and ~auto-hscroll-mode~, because Vellumory scrolls sideways itself.
+- While the view moves, ~gc-cons-threshold~ is raised to
+  ~vellumory-gc-threshold~, and garbage is collected once reading rests (see
+  ~vellumory-gc-idle-delay~).  With ~gcmh-mode~ on, as in Doom, collection is
+  left to it.
+- ~save-place-mode~ is off for documents, and their old save-place entries
+  are dropped.
+- In documents, these commands are remapped: ~write-file~ to
+  ~vellumory-write-copy~, ~undo~ and ~undo-only~ to ~vellumory-undo~, ~undo-redo~
+  to ~vellumory-redo~, ~text-scale-adjust~ to ~vellumory-text-scale-adjust~,
+  ~keyboard-quit~ to ~vellumory-search-quit~, and ~consult-line~ and Doom's
+  ~+default/search-buffer~ to ~vellumory-consult-line~.
+- Turning on ~follow-mode~ in a document turns on ~vellumory-follow-mode~
+  instead.
+- A function on ~TeX-mode-hook~ makes Vellumory AUCTeX's PDF viewer after
+  every other setup; ~vellumory-sync-tex-viewer~ set to ~nil~ keeps yours.
+- A function on ~enable-theme-functions~ redraws documents whose page
+  colours follow the Emacs theme.
+- With evil, evil-snipe is turned off in documents and their sidebars.
+
+* Performance and how it is measured
+:PROPERTIES:
+:DESCRIPTION: What makes it fast, the method, the results and their limits.
+:END:
+#+cindex: performance
+#+cindex: benchmarks
+#+cindex: speed
+
+Speed claims are only worth something with the method behind them.  This
+chapter gives both, and says where the evidence ends.
+
+** What makes it fast
+
+- Rendering happens in the worker, on several threads, while Emacs stays
+  free for your input.  Only strips that a window shows are rendered sharp,
+  at the screen's resolution.  Work that scrolls out of view is cancelled.
+- The worker writes raw pixels, which Emacs decodes fastest, to a directory
+  in memory; nothing is compressed to PNG on the way.
+- While the view moves faster than rendering, previews fill in; cheap
+  pages render sharp at once; idle time prepares what comes next.
+- Images rendered ahead are decoded before they scroll into view, not in
+  the step that shows them.
+- Reader buffers turn off Emacs's bidirectional text reordering, which
+  they do not need: that cut the redisplay time of a scroll step from
+  1.27 ms to 0.52 ms.
+- Garbage collection is held back while you scroll and runs once reading
+  rests, so it does not fall into a step.
+- Opening reads page sizes from the document's page tree without parsing
+  page contents, and hashes the file on another thread while MuPDF parses
+  it.
+
+** The method
+#+cindex: measurement method
+
+Two benchmarks are part of the repository and run from the development
+shell.
+
+The first, =tests/bench.el=, runs in a real graphical Emacs and drives each
+reader through the same script on the same document and window.
+"Blocking" is the time Emacs's main thread spends in a command plus a
+forced redisplay: the delay a keypress experiences.  "Sharp" is the time
+until every visible part of the window shows a final rendering.  Each run
+uses a freshly started Emacs with byte-compiled code.
+
+#+begin_example
+lean --run scripts/Build.lean lake env lean --run scripts/Review.lean \
+  bench target/corpus/pdf32000-2008.pdf
+#+end_example
+
+The second, the screen benchmark (=Review.lean screenbench=, with
+=tests/screen-bench.el=), measures what reaches the display.  It records the
+page area at 200 frames a second with ffmpeg while each viewer follows the
+same script, and measures from the start of each action to the first
+changed frame, and to the last change before the next action.  This
+includes viewers that draw outside Emacs, such as EAF.
+
+All figures below come from one machine: an AMD Ryzen 5 3600 (12
+threads), with Emacs on a virtual X display (Xvfb).  They are ranges over
+consecutive runs.
+
+** Results
+#+cindex: comparison with pdf-tools
+
+On the 756 pages (22 MB) of ISO 32000-1, in Emacs 32 (pgtk), compared with
+emacs-reader, pdf-tools (in page and roll mode) and DocView (measured
+2026-10-28):
+
+| Measure                       | Vellumory   | emacs-reader | pdf-tools roll | pdf-tools  | DocView      |
+|-------------------------------+-------------+--------------+----------------+------------+--------------|
+| open, until sharp             | 136–166 ms  | 160–178 ms   | 171–183 ms     | 504–605 ms | 1145–1163 ms |
+| jump to page 300, blocking    | 0.8–4.2 ms  | 68–72 ms     | 49–61 ms       | 63–92 ms   | 7.7–8.9 ms   |
+| jump to page 300, until sharp | 12–80 ms    | as blocking  | as blocking    | as blocking | 211–213 ms  |
+| reading scroll, mean step     | 1.1–1.6 ms  | 7.8–9.3 ms   | 5.4–7.5 ms     | 7.6–11.5 ms | not measured |
+| reading scroll, 95th percentile | 5.7–9.0 ms | 52–55 ms    | 43–51 ms       | 52–89 ms   | not measured |
+| reading scroll, worst step    | 9.8–12.9 ms | 53–61 ms     | 48–63 ms       | 62–94 ms   | not measured |
+
+Opening is about as fast as the fastest other reader (the ranges overlap
+with emacs-reader's), while laying out all 756 pages.  A jump blocks input
+for under 5 ms, and the worst reading step is below the others' 95th
+percentile.
+
+On the screen, opening the 14-page tracemonkey paper, jumping and taking
+thirty reading steps, all viewers in the same Emacs 31.1 for X (measured
+2026-10-29):
+
+| Viewer         | open, settled | jump, settled | step, median | step, worst |
+|----------------+---------------+---------------+--------------+-------------|
+| Vellumory      | 64–72 ms      | 30–36 ms      | 3.7–4.3 ms   | 6.1–6.6 ms  |
+| emacs-reader   | 186–223 ms    | 64–66 ms      | 4.0–4.2 ms   | 39–42 ms    |
+| pdf-tools      | 547–583 ms    | 144 ms        | 5.5–5.6 ms   | 145–150 ms  |
+| pdf-tools roll | 489–510 ms    | 133–153 ms    | 5.7–6.2 ms   | 142–159 ms  |
+| pdf-tools, vimura server | 887–986 ms | 392–477 ms | 4.4–4.6 ms | 442–539 ms |
+| DocView        | 466–496 ms    | 205–207 ms    | 3.2–4.1 ms   | 709–753 ms  |
+| doc-tools      | 1155–1172 ms  | 363–381 ms    | 4.0–4.3 ms   | 7.0–9.5 ms  |
+| EAF            | 676–759 ms    | 81–93 ms      | 9.3–9.6 ms   | 50–58 ms    |
+
+Median steps within Emacs are level: their differences are below the 5 ms
+between two frames.  Where Vellumory differs is opening, jumping and the
+worst steps, the stutters you notice.
+
+** The limits of this evidence
+#+cindex: limitations of the measurements
+
+- Every figure comes from one server on a virtual display.  No laptop or
+  physical screen has been measured, and HiDPI has been checked only at
+  GTK's scale 2 on a virtual display.
+- The pgtk build of Emacs running on X11 added about 8 ms to every Emacs
+  viewer's step: on the pinned Emacs 32 pgtk, forced onto X11, Vellumory's
+  median step was 11.8–13.7 ms and its worst 19.9 ms, and the order of the
+  viewers held.  Under Wayland, pgtk's own display, no screen recording was
+  made.
+- The numbers are for these documents and these scripts.  Other documents,
+  with heavier pages, behave differently.
+- Interpreted Lisp roughly doubles the layout and redisplay work, so the
+  measurements are only meaningful with byte-compiled code.
+
+The full record, with every run and the reasoning behind each design
+choice, is in the repository: =docs/reader-validation.org= and
+=docs/research.org=.
+
+* Troubleshooting
+:PROPERTIES:
+:DESCRIPTION: When something does not work as expected.
+:END:
+#+cindex: troubleshooting
+#+cindex: problems
+
+Most problems have a simple cause.  Start with ~M-x vellumory-doctor~: it
+checks the whole setup, names what is wrong and, where Emacs can fix it,
+offers a button (see [[*Checking that it works]]).  Here are the problems
+you are most likely to meet.
+
+** The document opens in another mode
+#+cindex: wrong mode
+
+- ~vellumory-install~ has not run.  Call it in your init file (see [[*Setting up
+  your init file]]), or open the file with ~M-x vellumory-open~.
+- Another reader was installed after it.  pdf-tools' ~pdf-tools-install~, for
+  example, puts its own association in front.  Call ~vellumory-install~
+  afterwards.
+- Your package manager does not load the generated autoloads.  Add
+  ~(require 'vellumory-autoloads)~ before ~(vellumory-install)~.  In a plain
+  clone, generate the file first (see [[*Setting up your init file]]).
+
+** Emacs is too old
+Vellumory needs Emacs 29.1 or newer, and the doctor says so.  Exporting
+Org to accessible PDF also needs Org 9.7 or newer; the export names the
+version it found (see [[*Requirements]]).
+
+** Emacs says it needs a graphical display
+The message reads "Vellumory needs a graphical Emacs with image support".
+Pages are images, so start Emacs on a graphical display; ~emacs -nw~ and
+text terminals cannot show them.
+
+** The header line says the worker stopped
+#+cindex: worker stopped
+#+cindex: diagnostics
+
+The header line reads "Worker stopped:" followed by the reason: the worker
+program has ended.  Its messages are in the hidden buffer
+=" *Vellumory worker diagnostics*"= (the name starts with a space; type it
+with ~C-x b~ and a leading space).  Press ~r~ to reload: that starts a new
+worker.  If the worker cannot start at all, check ~vellumory-program~: in a
+shell, =vellumory --help= should print the subcommands.
+
+** An edit says the file is read-only
+Edits replace the file, so they need write access to it and to its
+directory.  ~C-x C-w~ (~vellumory-write-copy~) writes a writable copy and
+opens it; edit that (see [[*Documents that cannot be edited]]).
+
+** Other edit refusals
+- "Only documents visited from a local file can be edited": a remote file
+  or a buffer without a file.  ~C-x C-w~ writes a local copy.
+- "…is shown converted to PDF": converted documents cannot be edited.
+- "A virtual document is composed from others": edit the sources.
+- "A document needs at least one page": you tried to delete every page.
+- "PDF/A-1 forbids the transparency highlights need": underline instead
+  (~a u~).
+- A question about a digital signature: see [[*Signatures]].
+
+** Search finds nothing
+The document may have no text layer: scans are pictures of text.  Add one
+with ~e o~ (which needs ocrmypdf and Tesseract with your language's data).
+If the text is there but search still misses it, try a regular expression
+search (~C-M-s~); some documents encode characters oddly, and the preflight
+checks (~V~, then ~b~) report fonts without Unicode maps.
+
+** Validation, OCR or export complain about a missing program
+Each of these runs a separate program: veraPDF for validation, ocrmypdf
+for text recognition, LuaLaTeX or Typst for Org export, a converter for
+DVI and the others.  Install the one named in the message (see
+[[*Requirements]]).  The Nix build of the worker includes qpdf, veraPDF and
+ocrmypdf; other builds look for them on your =PATH=.  In Doom, =doom doctor=
+lists what is missing.
+
+For the LaTeX export, TeX Live must be 2025 or newer and include the
+tagging code; the message "#+LANGUAGE must be a language tag" means that
+the file's =#+LANGUAGE:= line should read like =en-GB=.
+
+** Pages look blurry for a moment
+That is the preview shown while you move faster than pages can be
+rendered.  It sharpens about a tenth of a second after you stop
+(~vellumory-refine-delay~).  If pages stay blurry, the worker may be busy
+with a heavy page; the header line says "Rendering…" until it is done.
+
+** SyncTeX finds nothing
+Compile with SyncTeX on, so that =NAME.synctex.gz= lies next to =NAME.pdf=.
+In AUCTeX, turn on ~TeX-source-correlate-mode~ before compiling.  Forward
+search names the source line it looked for when it finds no match.
+
+** vellumory-info cannot find the manual
+Info has to find =vellumory.info=.  See [[*Reading this manual in Emacs]].
+
+** Evil keys do not work
+Call ~vellumory-evil-setup~ after evil has loaded (see [[*Setting up evil]]).
+In Doom, enable =:editor evil= and the module does it.
+
+** Where Vellumory keeps its files
+#+cindex: disk usage
+#+cindex: files Vellumory writes
+
+| What                                  | Where (by default)                       |
+|---------------------------------------+------------------------------------------|
+| reading positions                     | =~/.local/state/vellumory=                 |
+| snapshots and edit histories          | =~/.local/share/vellumory=                 |
+| previews kept across sessions (256 MB at most) | =~/.cache/vellumory/rasters=      |
+| QDF files, virtual documents, attachments | =~/.cache/vellumory=                   |
+| copies of remote documents, conversions | =~/.cache/vellumory=                     |
+| the session's rendered strips         | under =$XDG_RUNTIME_DIR/vellumory=, removed on exit |
+
+Caches can be deleted at any time.  The store in =~/.local/share/vellumory=
+is not a cache: it holds your edit histories.
+
+* Frequently asked questions
+:PROPERTIES:
+:DESCRIPTION: Short answers to common questions.
+:END:
+#+cindex: questions
+#+cindex: FAQ
+
+** Does reading a document change the file?
+No.  Reading never writes to the document.  Your place is saved elsewhere
+(see [[*Leaving and coming back]]), and saving the buffer writes nothing.
+The file changes only when you make an edit, and every edit can be
+undone.
+
+** Can I use Vellumory alongside pdf-tools?
+Yes.  Whichever was installed last opens PDFs by default, and ~M-x
+vellumory-open~ always opens a file in Vellumory.  Vellumory reads pdf-tools'
+=.vpdf= virtual documents, and opens org-pdftools' =pdf:= links when nothing
+else claims them.
+
+** How much disk space does the history take?
+Every state is a complete copy of the document, stored once however often
+it recurs.  A 2 MB paper edited ten times takes up to 22 MB in the store.
+There is no command to prune the store yet.
+
+** Can I edit the text on a page?
+No.  Vellumory edits a document's structure, not its page content.  For
+the raw PDF, the syntax view (~C-c C-c~) lets an expert change objects
+directly.
+
+** Does it work on macOS or Windows?
+Nobody has tried yet.  Vellumory is developed and tested on Linux.  The Nix
+flake also declares Apple silicon Macs (=aarch64-darwin=): nixpkgs has every
+dependency there, and the code avoids calls only Linux has, but nobody has
+built or run it on a Mac.  Intel Macs are out, since nixpkgs 26.11 dropped
+them.  Reports from other systems are welcome.
+
+** Can I print?
+Not from Vellumory: there is no print command yet.  Print the file with
+your system's tools.
+
+** Can I sign a document?
+No.  Vellumory verifies signatures, but cannot create them.
+
+** Why is the worker written in Lean?
+Lean 4 is a programming language and a proof assistant.  The worker is
+ordinary, fast compiled code, and some of its parts come with proofs: that
+the render queue hands out the most urgent job and loses none when work is
+cancelled, that the edit history stays well-formed, that clipped pixels
+stay inside the page and the window, that arguments reach external
+programs unchanged, and that the comparison's alignment is sound.  The
+project's tooling (build, tests, reviews, benchmarks) is Lean too.
+
+** Why does my EPUB have different page numbers after changing the text size?
+A book has no fixed pages; Vellumory lays it out on pages of a given size.
+Larger text needs more pages.  Vellumory keeps you at the same share of
+the book.
+
+* Credits
+:PROPERTIES:
+:DESCRIPTION: The projects Vellumory builds on and learned from.
+:END:
+#+cindex: credits
+#+cindex: acknowledgements
+
+Vellumory stands on the work of many people.
+
+It renders and reads documents with MuPDF, by Artifex.  Its edits run on
+qpdf, by Jay Berkenbilt, whose fix-qdf also makes the syntax view
+editable.  Validation is done by veraPDF.  Text recognition is ocrmypdf with Tesseract.  Signatures
+are verified with OpenSSL, XMP metadata is edited with Exempi and Adobe's
+XMP Toolkit, and SyncTeX data is read with TeX Live's libsynctex.  The
+worker is written in Lean 4, with Lake and the lean4-cli library.  Org
+export uses LuaLaTeX with the LaTeX Project's tagging code, and Typst.
+And all of it lives in GNU Emacs, with Org and transient.
+
+The test documents include =tracemonkey.pdf= and =alphatrans.pdf= from
+Mozilla's pdf.js test suite, and Adobe's published copy of ISO 32000-1.
+
+Vellumory learned from the Emacs document readers before it, and is
+grateful to their authors: DocView, which comes with Emacs; pdf-tools,
+whose features and file formats set the bar, and whose users' wishes
+shaped this work; emacs-reader, which showed what a MuPDF module can do;
+EAF's PDF viewer; doc-tools; and org-noter, whose notes Vellumory is glad
+to serve.  Its evil keys follow evil-collection's for pdf-tools, and its
+presentation and caret browsing follow Evince, Okular and Firefox, and
+its link previews GNOME's Papers.  Reading mode lays out its text with
+Emacs's own HTML renderer, shr.  Fitting
+the content width follows pdf-tools' slicing and Sioyek's smart fit.  The
+rendering design learned from PDF.js, Chromium's PDFium viewer, Okular,
+Evince, zathura and Sioyek.  The Doom module builds on Doom Emacs and
+nix-doom-emacs-unstraightened.
+
+* GNU General Public License
+:PROPERTIES:
+:APPENDIX: t
+:DESCRIPTION: The licences of Vellumory.
+:END:
+#+cindex: licence
+#+cindex: GPL
+#+cindex: AGPL
+
+Vellumory is free software, in two parts with two licences.
+
+The Emacs Lisp package is distributed under the GNU General Public
+License, version 3 or (at your option) any later version:
+
+#+begin_quote
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option)
+any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+for more details.
+
+You should have received a copy of the GNU General Public License along
+with this program.  If not, see https://www.gnu.org/licenses/.
+#+end_quote
+
+The worker program (its Lean and C code) is distributed under the GNU
+Affero General Public License, version 3 or (at your option) any later
+version.  MuPDF, which the worker links, is itself licensed under the
+AGPL.
+
+The full texts are in the source repository: =LICENSE= holds the GNU General
+Public License and =LICENSE-AGPL= the GNU Affero General Public License.
+This manual is distributed under the same terms as the Emacs Lisp code.
+
+* Command index
+:PROPERTIES:
+:INDEX:    fn
+:UNNUMBERED: t
+:DESCRIPTION: Commands and functions.
+:END:
+
+* Variable index
+:PROPERTIES:
+:INDEX:    vr
+:UNNUMBERED: t
+:DESCRIPTION: User options, hooks and variables.
+:END:
+
+* Key index
+:PROPERTIES:
+:INDEX:    ky
+:UNNUMBERED: t
+:DESCRIPTION: Keys and mouse events.
+:END:
+
+* Concept index
+:PROPERTIES:
+:INDEX:    cp
+:UNNUMBERED: t
+:DESCRIPTION: Topics and ideas.
+:END:

@@ -1,0 +1,7 @@
+{"qpdf": [{"jsonversion": 2},
+ {"obj:17 0 R": {"value": {"/Type": "/Annot", "/Subtype": "/Widget", "/FT": "/Sig", "/T": "u:Signature1",
+                           "/Rect": [380, 60, 560, 110], "/F": 4, "/P": "2 0 R"}},
+  "obj:2 0 R": {"value": {"/Contents": "3 0 R", "/MediaBox": [0, 0, 595.276, 841.89], "/Parent": "6 0 R",
+                          "/Resources": "1 0 R", "/Type": "/Page", "/Annots": ["17 0 R"]}},
+  "obj:14 0 R": {"value": {"/Pages": "6 0 R", "/Type": "/Catalog",
+                           "/AcroForm": {"/Fields": ["17 0 R"], "/SigFlags": 3}}}}]}

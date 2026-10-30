@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Worker, tests and lints (Nix)
+    # While the repository is private, runs cost Actions minutes: by hand only.
+    if: ${{ !github.event.repository.private || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+      # The package build runs the Lean tests, the proof audit and the ERT
+      # suite in the sandbox; it fails on any failure.
+      - name: Build the package and run its tests
+        run: nix build .#vellumory --print-build-logs
+      - name: Lint (byte-compile, checkdoc, package-lint, org-lint, typos, vale, Nix, workflows)
+        run: nix develop .#ci --command lean --run scripts/Build.lean lint
+
+  macos:
+    name: Worker and tests on macOS (Nix, Apple silicon)
+    # A private repository pays ten Linux minutes for each macOS minute: this
+    # job runs once the repository is public, where runners are free.
+    if: ${{ !github.event.repository.private }}
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+      - name: Build the package and run its tests
+        run: nix build .#vellumory --print-build-logs
+
+  emacs:
+    name: Emacs ${{ matrix.emacs }}
+    if: ${{ !github.event.repository.private || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        emacs: ['29.4', '30.2', '31.1', snapshot]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+      - uses: purcell/setup-emacs@bdc64dc730ae1fcba200bfd52cb1b4cf6159cbe5 # v8.0
+        with:
+          version: ${{ matrix.emacs }}
+      - name: Build the worker
+        run: |
+          nix develop .#ci --command lean --run scripts/Build.lean prepare
+          nix develop .#ci --command lean --run scripts/Build.lean lake build vellumory Vellumory.Fixtures
+          nix develop .#ci --command lean --run scripts/Build.lean autoloads
+      # This job's Emacs, not the development shell's: the path is resolved
+      # before entering the shell.
+      - name: ERT suite with Emacs ${{ matrix.emacs }}
+        run: |
+          emacs="$(command -v emacs)"
+          nix develop .#ci --command lean --run scripts/Build.lean lake env lean --run scripts/Review.lean test "$emacs"

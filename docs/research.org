@@ -1,0 +1,189 @@
+#+title: Vellumory research and decisions
+
+Each claim links to its source. Sources were read at pinned revisions on
+2026-10-27/28. "Measured" means measured on this host (12 cores, Emacs
+32.0.50 pgtk b157d8e9, MuPDF 1.27.2); measurements are reproducible with the
+commands given and are not universal benchmarks.
+
+* Name
+"Vellumory" (vellum + memory: the archival skin pages were written on, and a
+reader that remembers every state). Checked unused on 2026-10-28: an extended
+exact-phrase web search returned no page using the word (only Vellum, Vellumy,
+Vellumoid); =gh search repos vellumory= found no repository; MELPA, GNU ELPA
+and NonGNU ELPA archive contents have no entry; crates.io, npm and PyPI answer
+404 for the name. Also unused there (same day): Codeberg repository search (empty),
+SourceHut project search (no project of that name), nixpkgs (=nix search=: no
+results), Debian sources (no exact or partial match), the AUR (0 results),
+Homebrew, RubyGems, Hackage and Lean's Reservoir (404), pkg.go.dev ("No
+matches"). GitLab's project search needs authentication (HTTP 500 without); an
+extended web search restricted to gitlab.com, github.com, codeberg.org, sr.ht,
+melpa.org and emacswiki.org found no page using the word either (only Vellum,
+Velory, Vellumly). Rechecked 2026-10-29: an extended exact-phrase web search
+again found no page using the word (only Vellumy, Vellum, Vellumoid); GitHub's
+repository search answers =total_count: 0= for it in either case; PyPI, npm,
+crates.io, MELPA, GNU ELPA, NonGNU ELPA, Hackage and RubyGems answer 404 for
+it; vellumory.com and vellumory.org do not resolve. Rechecked 2026-10-30, the day its
+own repository was created: GitHub finds only that repository (cypl0x/vellumory)
+and no code elsewhere using the word; MELPA, GNU ELPA and NonGNU ELPA list no
+such package; PyPI, npm and crates.io answer 404; a web search for the exact word
+finds no page using it; vellumory.com, .org, .net and .dev do not resolve.
+
+* Rendering pipeline
+** Measured: where time goes
+- Emacs decode cost on the main thread (forced via =image-size=, flushed
+  between runs, pgtk/cairo):
+
+  | image                 | PNG      | PPM (pbm) |
+  |-----------------------+----------+-----------|
+  | strip 1240×192        | 2.5 ms   | 1.3 ms    |
+  | page 1240×1754        | 16–17 ms | 8–10 ms   |
+  | page 2480×3508 (2× DPI)| 77 ms    | 51–55 ms  |
+
+- Worker cost: =mutool draw -s t= at 1240 px, 12 pages. PNG encoding dominates:
+  minaret 9 ms/page raw vs 50 ms/page PNG; Turm 14 vs 52 ms; monograph pages
+  reach 447 ms raw (heavy content), where parallel bands and cancellation matter.
+- Opening (old path, every page loaded): 70–80 ms for 240–327 pages. The
+  new path reads page boxes from the page tree only.
+- Decision: raw binary PPM written to a per-worker tmpfs directory
+  (=$XDG_RUNTIME_DIR=), referenced by path. Zero encoding, fastest available
+  Emacs decoder, no Lisp string concatenation of pixel data in a process filter.
+
+** MuPDF threading and cancellation
+- [[https://mupdf.readthedocs.io/en/latest/reference/c/overview.html][MuPDF overview]] (=docs/reference/c/overview.md:162-307=): one cloned
+  context per thread (=fz_clone_context=, =context.h:350-365=), shared
+  =fz_locks_context=; only one thread may use a document at a time; a display
+  list may be rendered from several threads simultaneously ("banded rendering").
+- =fz_cookie= (=device.h:439-486=): unsynchronized; abort may be set from
+  another thread, no upper bound on latency, never reset → fresh cookie per job.
+- Abort leaves partial pixmaps; =fz_run_display_list= breaks silently
+  (=list-device.c:1754=); an aborted =fz_run_page= truncates the recorded list
+  (=pdf-interpret.c:1555=) → never cache lists built under an aborted cookie.
+- Scissor culling makes strip cost proportional to strip content
+  (=list-device.c:1891-1921=), but only with a cached display list.
+- Implemented accordingly in =native/mupdf.c=: base context with pthread
+  locks, pooled clones, =doc_lock= around all document access, shared LRU of
+  24 display lists, aborted builds never published.
+
+** How other viewers render
+- PDF.js (279175b): visible pages first, then detail views, then one page in
+  scroll direction (=web/pdf_rendering_queue.js:112-188=); =maxCanvasPixels=
+  2^25; detail canvas = visible + one viewport each side, skipped during fast
+  scrolling (=pdf_viewer.js:2166-2190=); zoom shows CSS-scaled canvas and
+  waits 400 ms.
+- Chromium PDFium: progressive paint of dirty rects, 250/300 ms pause timeout;
+  scrolling reuses painted pixels (=paint_aggregator.cc=).
+- Okular: tiles only above 4× screen pixels; 4×4 grid, split tiles > 2 Mpx;
+  512 px prefetch margin; aborts a running render on higher priority.
+- Evince: 50 MB cache, ±3 pages preload, cancellation only after render.
+- zathura: one render thread, generation counter, 16-page cache, scaled
+  thumbnail while re-rendering.
+- Sioyek: 4 threads with cloned contexts, optional 5-band slicing.
+- mupdf-gl: whole page, no display list, no threads.
+- Adopted: visible tiles first ordered from a reading focus line, previews
+  during fast motion, generation counter, cancellation via cookies, one
+  viewport prefetch ahead and half behind, tiles only beyond the window width.
+
+** Emacs image internals (emacs-31 b5c91b3 and master)
+- Cache key =sxhash(filter_image_spec(spec))= (=image.c:3545=), O(1) for
+  strings; candidates compared with =Fequal= — identical spec objects are
+  fastest, so reuse spec objects.
+- Decoding is eager in =lookup_image= (=image.c:3568=): =image-size= predecodes.
+- =image-flush= → =uncache_image= → =SET_FRAME_GARBAGED= per image
+  (=image.c:2293-2312=): flushing is expensive; batch it.
+- Automatic eviction every 101 redisplays; above 40 cached images the delay
+  shrinks to 1600·300/n² s and any eviction clears matrices
+  (=image.c:2381-2416=, =xdisp.c:18192=). Keep live strip images below ~40.
+- pgtk HiDPI: surfaces carry the device scale; Emacs draws logical pixels;
+  SVG is rasterized at device size then scaled 1/f (=image.c:3072-3076=).
+  Raster strips: render at width × =frame-scale-factor=, display at logical size.
+- Emacs master (32) adds =canvas= images ([[https://github.com/emacs-mirror/emacs/commit/d5f515e4a3350079330c2e80f3681d140d649c88][d5f515e]], 2026-08-16, bug#80281):
+  ARGB32 pixel buffers refreshed in place with =canvas-refresh=, redrawing only
+  glyphs showing the image. Not present in the user's build b157d8e9
+  (verified: =(image-type-available-p 'canvas)= ⇒ nil). Planned fast path.
+- =read-process-output-max= is 65536 on 31/32 (verified live).
+
+** Existing Emacs readers
+- pdf-tools 1.3.0: epdfinfo (poppler/cairo) writes PNG (level 1, no filter) to
+  a temp file (=epdfinfo.c:751-866=); HiDPI renders 2× and displays with
+  =:width=. Roll mode renders whole pages synchronously inside
+  =pre-redisplay-functions= (=pdf-roll.el:194-238=); issues #344/#345/#373.
+- emacs-reader ([[https://codeberg.org/MonadicSheep/emacs-reader][codeberg]], 4fca3aa): dynamic module, 8 threads with cloned
+  contexts, whole-page PPM via =create-image … 'pbm t=, ±5 page cache, one
+  overlay per page; a canvas port branch exists. No document lock around
+  =fz_load_page= across threads was found (unconfirmed race).
+- DocView pre-renders every page with external converters.
+- EAF pdf-viewer uses PyMuPDF/Qt outside Emacs' display engine.
+- doc-tools ([[https://github.com/dalanicolai/doc-tools][dalanicolai]], main a9c1b0f, 2023-02; dev 2026-05): =mutool draw=
+  renders every page to PNG files under =/tmp/doc-tools/= when a file opens,
+  then an image-roll display engine scrolls them; page count, sizes and text
+  come from poppler's command-line tools.  Its MuPDF backend loads its author's
+  own paths (=/home/dalanicolai/git/…=); its dev branch hard-codes one book's
+  page directory.  Not packaged; the README calls it a work in development.
+- pdf-tools with the vimura server (same author: fork branch =production=
+  6808471, 2022-05, and vimura-server 1.3 on PyPI, 2022-05-02): an
+  interactive =python -q= with PyMuPDF answering epdfinfo's requests, found
+  through Python's user site; it logs at DEBUG level into =~=.  Its precursor
+  vimura-epc is marked deprecated, "a very simple basic proof of concept".
+- etaf-reader ([[https://github.com/emacs-taf/etaf-reader][emacs-taf]], created 2026-10-12): a text ebook reader; a PDF
+  becomes poppler's =pdftotext= text in a SQLite library, so no page is drawn.
+- Not working viewers: epdf ([[https://github.com/zbelial/epdf][zbelial]], 2021) is Emacs's module-test
+  skeleton (=mod-test-sum=); yapdf ([[https://github.com/condy0919/pdf-mode][condy0919/pdf-mode]], 2021) embeds a GTK
+  widget but =yapdf-new= never passes its FILE on.  appine (2026) embeds macOS's
+  PDFKit (Objective-C), so it cannot run on Linux.
+
+* Feature inventory to meet or exceed
+Full list with sources: pdf-tools epdfinfo commands (ping, features, open,
+close, metadata, outline, number-of-pages, pagelinks, gettext, getselection,
+pagesize, boundingbox, charlayout, pagelabels, annotations get/add/del/edit,
+save, attachments, synctex forward/backward, renderpage, search string/regexp).
+pdf-tools modes: history, isearch, links (avy-style hints), misc, outline,
+annot, sync, occur (multi-document), virtual PDFs, midnight/themed modes,
+slicing, rotation, registers. evil-collection pdf map: j/k, C-f/C-b/C-d/C-u,
+gg/G with counts, h/l/^/$, zi/zo/z0, H/P/W, f/F, sb/sm/sr, gl, / ? n N,
+zd/zm/zp, o, m/', y, gj/gk ]] [[, C-o/C-i, q/ZZ/ZQ, gr.
+Ecosystem contracts: org-noter handler hooks; saveplace; bookmark handlers;
+org-pdftools link format; citar/bibtex open via find-file; AUCTeX
+=TeX-view-program-list= entry + forward/backward search honoring
+=pdf-sync-backward-redirect-functions=; consult-imenu via
+=imenu-create-index-function=; consult preview sets buffer-file-name nil.
+User complaints (pdf-tools issues): continuous scrolling, two-page view,
+follow-mode, speed at fit width on pgtk (#355), memory (#167, #215),
+keyboard selection, double/triple click, evil conflicts, more annotation
+types, page reorder/remove (#60), HiDPI thin rendering (#85), install friction.
+
+* Doom Emacs
+- doomemacs/doomemacs is now [[https://github.com/doomemacs/core][doomemacs/core]] (59cdaa3); modules moved to
+  [[https://github.com/doomemacs/modules][doomemacs/modules]] (42a0479). Emacs 32 is not blocked (minimum 29).
+- =:tools pdf= wires pdf-tools via =:mode=/=:magic "%PDF"=, =q= →
+  =kill-current-buffer=, popup rules for =*Outline*=, large-file prompt
+  suppression, evil cursor workaround; evil keys come from evil-collection.
+- Reproducible Doom: [[https://github.com/marienz/nix-doom-emacs-unstraightened][nix-doom-emacs-unstraightened]] (413ef4b) with
+  emacs-overlay 6c66dd7, which pins Emacs b157d8e9 — the user's exact revision.
+  Local packages via =:ignore t= + =extraPackages=; doomdir copied to the store.
+- The integration is a =:tools vellumory= module (not a shadowing =:tools pdf=).
+- APIs: =map!= with =:localleader=, =set-popup-rule!=, =set-evil-initial-state!=,
+  =set-lookup-handlers!=, =doom-escape-hook=, =doom-real-buffer-p=,
+  doom-modeline =doom-modeline-def-modeline= + =doom-modeline-mode-alist=.
+
+* Standards and tools (nixpkgs 8ce4ef6)
+- qpdf 12.3.2, verapdf 1.30.2 (GreenField; upstream 1.30.3), ocrmypdf 17.11.0,
+  tesseract 5.5.3, typst 0.15.1, ghostscript 10.07.1, diff-pdf 0.5.3.
+- qpdf: full option inventory in the agent dump (=qpdf --help=all=); exit codes
+  0/2/3; JSON v2 is semantically, not byte-identically, round-trippable;
+  =--update-from-json= cannot delete objects.
+- veraPDF flavours 1a 1b 2a 2b 2u 3a 3b 3u 4 4f 4e ua1 ua2 wt1r wt1a; formats
+  raw xml text html json; =--extract= features; =--policyfile=;
+  =--fixmetadata=; exit codes 0 valid, 1 invalid, 2–12 errors.
+- Validated PDF/A + PDF/UA generators (run through veraPDF 1.30.2): Typst
+  =--pdf-standard a-2a,ua-1= passes; LuaLaTeX =\DocumentMetadata{pdfstandard={ua-2,a-4f},tagging=on}=
+  passes UA-2 + A-4f, also via Org 9.8 =#+LATEX_CLASS_PRE=; pdfLaTeX fails UA-2;
+  Ghostscript PDF/A conversion drops the structure tree.
+- OCR: nixpkgs MuPDF is built with OCR disabled (=enableOcr ? false=);
+  ocrmypdf produces PDF/A-b with a text layer; tesseract outputs PDF/hOCR/ALTO.
+- Diff tools: diff-pdf (raster), comparepdf (text/appearance), pdf-diff (word
+  boxes); qpdf JSON diffs need path-based canonicalization.
+
+* Claims policy
+"Best", "optimal", "all features" and superiority over imagined
+implementations are goals, not established facts. Record evidence and
+remaining work honestly in [[file:requirements.org]] and [[file:reader-validation.org]].

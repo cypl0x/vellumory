@@ -1,0 +1,14 @@
+target/
+result
+result-*
+*.elc
+__pycache__/
+.direnv/
+.lake/
+vendor/
+# Generated: package managers make their own (straight writes it into its
+# build directory); `lean --run scripts/Build.lean autoloads' makes this one.
+lisp/vellumory-autoloads.el
+*~
+\#*#
+.#*

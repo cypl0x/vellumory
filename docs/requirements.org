@@ -1,0 +1,403 @@
+#+title: Vellumory completion ledger
+
+What was built, and how each item was verified.  DONE means implemented
+and verified by the cited tests or observations; TODO means incomplete.
+
+* Reading experience (first priority)
+** DONE Incremental parallel rendering, viewport only, refocus after motion
+Tiles at device resolution, previews while moving, cancellation, prefetch,
+tmpfs PPM, proved scheduler. Native, ERT and GUI suites; benchmark in
+[[file:reader-validation.org]].
+** DONE Continuous scrolling, mouse and trackpad, smooth screen scrolling
+** DONE Exact position persistence (path and content hash), bookmarks, registers
+** DONE Outline sidebar, page previews sidebar (default), Imenu, page labels
+** DONE Search with renderer highlights; selection (mouse, words, lines, pages)
+** DONE Links with hover help, keyboard hints, back/forward history
+** DONE Watch and reload; never write the layout; visit without reading bytes
+** DONE Themes for dark Emacs themes (tint, luminance inversion)
+** DONE Comparative measurements: faster open, lower input latency, far better tails
+(re-measured 2026-10-28 after the strip-height and bidi changes against pdf-tools,
+pdf-tools roll, DocView and emacs-reader, docs/reader-validation.org)
+** DONE Canvas images (Emacs 32 master since 2026-08-16, d5f515e) where pixels
+change in place: composed transitions draw on one canvas whose =:file= (one per
+presentation slot, raw native-endian ARGB32, written by the worker atomically)
+is reread by =canvas-refresh=; no module is needed, since =:file= is read with
+slurp_file and copied into the cairo surface (image.c canvas_apply_data,
+canvas_prepare_for_display). Measured on emacs-git-pgtk 20261027 (flake input
+=emacs-master=, =VELLUMORY_EMACS_MASTER=): 3.2 ms of Emacs time a frame instead
+of 8.4 at 1278 × 958, 48–49 frames in 0.8 s (worker-bound); screen pixels equal
+the file's after a refresh. Older Emacs keeps image frames. Reader tiles stay
+images, by measurement and source: a canvas keeps its pixels twice (its buffer
+and the cairo surface), doubling memory per cached strip, for 2–3 ms saved on
+a strip that is decoded ahead of time anyway. GUI suite 22/22 on both the
+pinned and the master Emacs 32, ERT on 31.1 and both 32s
+** DONE Fit the content width (c, zc), pdf-tools' slicing to the bounding box
+(=pdf-view-set-slice-from-bounding-box=, evil s b) and Sioyek's smart width:
+native content box from a 400-pixel rendering (ink: a channel 40 from the paper,
+paper from the corners two pixels in, a column or row counts at 1/150 ink),
+zoom to the window less 12 px a side, horizontal scroll to its left edge, kept
+across resizes, undone by any other zoom; no truncation arrows in the fringe.
+Lean: block box to 2 points, a speck ignored, coloured paper, blank page; GUI:
+paper at both window edges and ink just inside, before and after a resize;
+screenshot of tracemonkey page 1 at 121 %. Spreads refuse it (one horizontal
+scroll cannot crop two pages); vertical margins stay (continuous pages)
+** DONE Virtual documents in pdf-tools' .vpdf format (every page-spec form it
+accepts, regions relative to the page as shown): composed by MuPDF graft maps
+into one PDF, regions as CropBoxes (rotation-aware), cached under
+/vellumory/virtual by the list and the sources' SHA-256, read
+by the ordinary reader; header names the source page, M-{ M-} between sources,
+C-c C-c edits the list and back, edits refused, =; V= in Dired. pdf-tools
+emulates the document call by call; here every feature works on it. Lean:
+order, sizes, a region on a /Rotate 90 page, out-of-range refused, the cache
+reused and renewed when a source changes; ERT: a .vpdf visited, header, next
+source, edit and view again; screenshot
+** DONE Used in the author's Doom by keys, with screenshots (restart
+approved 2026-10-29; the other sessions on :1 told before and after): zc fits
+the content, j scrolls, / Trace RET finds 9 matches, s explains a document
+without an outline, g P presents and Space draws Wipe, Fade (mid-frame 40 %
+blue to green), Dissolve, Glitter and Fly full screen, an EPUB grows to 13
+points with C-x C-+ and keeps its place. Found and fixed there: Doom's
+hscroll-step made redisplay re-scroll a fitted page 68 columns instead of 15
+(the reader now owns horizontal scrolling: auto-hscroll-mode off; the GUI test
+reproduces it with Doom's settings and fails without the fix); xfwm4 dropped
+the presentation's fullscreen request made before mapping (asked again once
+shown). pgtk Emacs on X (as on :1) shows Emacs's own warning that the
+configuration is unsupported
+** DONE No garbage collection in a reading step's frame (plain Emacs): moving
+the view defers collection until reading rests 0.5 s with no frames drawn;
+left to gcmh (Doom) and the incremental collector. The screen benchmark's
+17–20 ms steps were each a collection (logged with =gcs-done=); eight runs
+after, none during the thirty steps, worst 6.6–8.8 ms. ERT: deferral, waiting
+while animating, restoring only its own threshold, gcmh left alone
+** DONE Every view's own keys work under evil (Doom): the history tree's c, RET
+(make current), v (view), d (compare), the validation report's n, p, b and the
+syntax view's RET were evil's change, visual, delete, search and newline;
+each view's own bindings now outrank normal state once its code loads, and
+the syntax view's q closes it while read-only (a letter, or evil's macro
+recording, while editing). Found walking through Doom by keys: c in the
+history tree did not check out. ERT, failing without the fix; checked by
+keys in Doom on Emacs 32.0.50 (k c made the compress state current)
+** DONE The semantic diff reports a turned or re-boxed page: pages paired by
+their text are compared by rotation and media, crop, bleed, trim and art boxes
+too, shown as "rotation 0° → 90°" and boxes in points. Found comparing a
+rotated page in Doom: the diff said "0 pages changed". Lean: a page turned by
+90° with unchanged words is one changed page with its rotation; ERT for the
+wording
+** DONE Page selection names every file as a file: =merge=, =extract= and the
+select and append edits pass qpdf =--file=NAME --range=R= (qpdf 11.9+), not
+the positional form, in which a document named like a range (=2-3=) was read
+as pages of the file before it (qpdf 12.3.2: 2 pages instead of 16). Lean: a
+merge with a document named 2-3 has all 6 pages; extract of 1,3 has 2. Found
+demonstrating split, merge and diff end to end (split into three, merged,
+diff: no change)
+** DONE A window keeps the document's place to the pixel when split off (below
+or beside), shown again after another buffer, made shorter (a popup), left
+alone by =delete-other-windows= (which recomputes its start and resets its
+vscroll, window.c) or recentred (Doom's window splits call =recenter=, as
+evil's zz does: point in a reader is an anchor, not a place), as image-mode's
+new windows do for DocView and pdf-tools; a relayout keeps every window's
+place. Each window's place is recorded with its size at every move; a resize
+alone puts it back. GUI test, failing without each fix. Checked by keys in the
+author's Doom (Emacs 32.0.50 pgtk, gcmh): SPC w s, SPC w v, C-w C-o, a
+help popup and zz all leave page 11 at y 158.6. =VELLUMORY_DOOM_SOCKET= runs
+=Review.lean doom= / =doomgui= on a Doom of its own, so the author's Doom
+is never the one tested; that suite 24/24 six times at 736 × 648 and 1600 ×
+1000 pixels. Test cleanup no longer kills a document still filling the frame:
+Emacs then deletes the window and, with no other buffer to show (Doom skips
+more), the review frame
+** DONE Verified in Doom with the current build (an isolated daemon on a private
+display, its own XDG directories; the author's Doom untouched): the GUI
+suite 23/23 twice, evil, doom-modeline and popups active. Found there: an
+edit had separated =vellumory-mode='s autoload cookie from its definition, so
+every autoloaded setup (Doom) opened documents in fundamental-mode while the
+plain review and ERT, which load the reader, passed; a subprocess test now
+requires the entry points after loading only the autoloads. Two tests assumed
+plain Emacs (a header line; a black caret where Doom's cursor colour is blue)
+and now hold in both
+** DONE Timed on the screen against every viewer, EAF's PDF viewer included
+(nixpkgs, PyMuPDF in Qt outside Emacs' display): =Review.lean screenbench=
+records the page area at 200 fps (ffmpeg x11grab, framemd5) while each viewer
+reads the same script; all in one X11 Emacs 31.1. Eight viewers (2026-10-29):
+Vellumory, emacs-reader, pdf-tools, its roll mode, pdf-tools with the vimura
+(PyMuPDF) server, DocView, doc-tools, EAF. Vellumory settles opening in 64–72
+ms (emacs-reader 186–223, DocView 466–496, pdf-tools 547–583, EAF 676–759,
+doc-tools 1155–1172), a jump in 30–36 ms (emacs-reader 64–66, EAF 81–93,
+pdf-tools 144), its worst reading step 6.1–6.6 ms (doc-tools 7.0–9.5,
+emacs-reader 39–42, EAF 50–58, pdf-tools 145–150, DocView 709–753); median
+steps within Emacs level at 3–6 ms, EAF 9.5. Found: the pgtk build on X11 adds
+about 8 ms a step to every Emacs viewer (docs/reader-validation.org)
+** DONE Every format DocView reads: EPUB (MuPDF, reflowed by page size, text
+size and user stylesheet, laid out anew at the same share of the book by the
+text-scale keys; the layout part of the document's identity, so rasters and
+positions never mix layouts), and through cached conversions DVI (dvipdfmx),
+DjVu (ddjvu), PostScript (ps2pdf, as TeX writes it with dvips) and office
+documents (soffice when installed; not in the flake: LibreOffice is not
+tested here). A changed original converts again and reloads. Found by the GUI
+review: =vellumory-install= called a function only the generated autoloads
+declared; it now declares its own (subprocess test without autoloads). Lean:
+reflow by size, width and stylesheet, identity per layout and not for PDFs;
+ERT: EPUB text and text scale, DVI / PS / DjVu read, cached, refused edits,
+recompiled DVI, original restored, install associations; screenshots
+** DONE Regexp search (=C-M-s=, =M-r= toggles while typing), as pdf-isearch's:
+Emacs regexps matched in the page's characters from the worker (lines joined
+by newlines, so a match may span them), one quad per line covered, the same
+cache, stepping and highlights as text search. Found by the GUI check: the
+first fetch of a page's characters waits for the worker, a timer pumped the
+search again meanwhile and the outer step ran without a job; the search is
+busy during the fetch now. ERT: count, quads equal to the worker's literal
+ones to 1.5 points, a two-line match, an incomplete regexp, M-r, a search on
+uncached characters; screenshot
+** DONE Occur across several documents, as pdf-tools' =pdf-occur= over buffers
+or Dired's marked files: =C-u M-s o= (every open document), =; o= in Dired;
+text from an open reader's cache or =vellumory text=, four at a time; matches
+by document and page; RET opens the match's document, highlighted (ERT: one
+document open, one not, the second's match opened)
+** DONE Two-page views: book (cover alone) and pairs, continuous; rows end where
+either page does; navigation, indicator, fit width/page per spread (ERT, GUI
+pixels of page | gutter | page, real-key screenshot)
+** DONE /PageLayout and /PageMode as defaults: two-column layouts open as pairs
+or book spreads unless =vellumory-spread= is set, /UseOutlines opens the contents
+sidebar, /UseThumbs the previews; the reader keeps focus (Lean native test,
+ERT, GUI test, screenshot on a private Xvfb)
+** DONE Fixed: MuPDF errors caught by the bridge but not cleared warned
+"UNHANDLED EXCEPTION!" on the next throw; every catch now converts or reports
+** DONE Presentation mode (C-c C-p, gP): own full-screen frame on another
+monitor when present, fitted and centred pages, neighbours rendered ahead,
+Evince's keys (Space, arrows, PgUp/PgDn, Home/End, digits RET, b . w), link
+clicks, right click back, debounced wheel, /Dur auto-advance, end screen; page
+report gains /Dur and /Trans (Lean native test, ERT, GUI test with frame pixels,
+real keys on a private Xvfb). Found and fixed on screen: with zero fringes a
+window-wide page lost its last 10 px to the truncation glyph
+** DONE Sidebar switch: =s= (reader, either sidebar, evil too) or a click on the
+Pages / Contents header tabs shows the other view in the same side window; the
+selected window stays selected; Contents greyed out with the reason when the
+PDF has no outline; closing closes (ERT, GUI test, real click on :7)
+** DONE /Trans page transitions in presentations: Wipe, Push, Cover, Uncover,
+Split, Box, Blinds with /Di, /Dm, /M and /D, drawn at 60 Hz from slices of the
+old and new page images (no re-rendering); a key mid-transition finishes it at
+once; pages of other sizes and other styles cut (page report gains the whole
+/Trans dictionary with ISO 32000 defaults: Lean native test; slice tiling
+property over every style, direction and progress: ERT; real 0.6 s Wipe with
+frame pixels mid-way and after: GUI)
+** DONE Dissolve, Glitter and Fade transitions: frames blended in C from the two
+page rasters (Dissolve: a fixed cell noise, so frames only add new pixels;
+Glitter: the noise in a wide band along /Di, any angle; Fade: integer mix),
+written by the worker, one in flight, the next asked for before the current one
+is drawn; each frame flushed from the image cache once replaced. Measured in
+pgtk Emacs 32 on Wayland: 48–49 of ~50 frames reach the screen in 0.81 s at
+1278 × 958 (Okular: 20 fps; Fly unimplemented there), 26–28 at GTK scale 2
+(1600 × 1200 device pixels). Lean: Fade values, Dissolve share, monotonicity
+and determinism, Glitter at 0°, 270°, 315°, refusals, worker path checks, frame
+rotation; GUI: mid-way pixels of each style
+** DONE Presentation rasters at exactly the drawn size: found while measuring
+the above, an image Emacs rescales by even one row took 60 ms instead of 6 to
+draw (pgtk); pages were rendered ceil-high and drawn round-high, so every page
+change paid it. A raster that arrives for a size the window no longer has
+(a new frame settling) is rendered again instead of drawn scaled
+** DONE Fly transition: inward the new page flies in along /Di from just
+offscreen scaling /SS → 1, outward the old one flies out scaling 1 → /SS,
+/Di /None scales only (poppler flattens it to 0); without /B only changed pixels
+fly; bilinear sampling. Page report gains /SS and /B (defaults 1 and false, as
+poppler). Lean: halfway geometry in and out, scale-only size, both /B cases;
+GUI: 30 frames in 0.82 s with mid-way pixels
+** DONE follow-mode across windows: =vellumory-follow-mode= chains the document's
+windows by pixels in follow-mode's order (top to bottom, then left to right)
+from whichever moved; paging moves by all of them; =vellumory-follow-split=
+(follow-mode's C-c . 1 and M-x follow-mode hand over to it, since buffer
+positions cannot chain pixel-scrolled pages); each window's header names its
+own page (GUI test: exact chaining after split, paging and scrolling either
+column; screenshot: line 10 at the foot of one column, line 11 at the head of
+the next)
+** DONE isearch-style stepping in search (C-s, C-r, empty C-s repeats); occur
+(=M-s o=) with Emacs regexps, page labels, context, next-error (ERT, real keys)
+** DONE Keyboard caret and selection (v; evil's visual state): characters
+with logical boundaries from MuPDF's structured text (new =chars= request),
+motions by character, line with goal column, word as evil's w b e, line ends,
+blocks, across pages; inclusive character and line selection through the
+native selection; caret bar in the page overlay (at least 1.5 device px);
+clicks place it (Lean native test; ERT on synthetic pages; GUI test with frame
+pixels and a copied line; real keys =v j j v e e y= on a private Xvfb; F5 and F7 were dropped later: F5 to
+F9 are reserved for users)
+** DONE HiDPI at scale 2 (=Review.lean start --scale 2=, GTK on X): tiles rasterized
+at device resolution (857 logical px → 1714 device px), all 14 GUI tests pass,
+screenshot crisp
+** DONE Native Wayland: =Review.lean wayland= starts sway on wlroots' headless
+backend (pixman, no XWayland); pgtk Emacs runs on =GdkWaylandDisplay= with no
+DISPLAY; the GUI suite passes 19/19 there, real keys through the
+virtual-keyboard protocol (wtype) select and copy with the caret, grim takes
+the screenshots. Found on Wayland: the header line kept stale state (caret
+mode, "Rendering…") until something else redrew it; state changes now
+refresh it
+** DONE One worker for every document: requests name their document, replies
+return to the buffer that asked, =close= frees one and the last buffer stops
+the process; five documents in 47.5 MB and 10 threads instead of at least
+200 MB and 50 (Lean protocol test with two documents and close; ERT routing
+and leaving; GUI suites on X and Wayland; measured)
+** DONE Fixed: raster directories of killed workers leaked (2165 of them had
+filled the 6.3 GB tmpfs /run/user/1000 to 100 %); every worker now sweeps
+the directories of workers that are gone (PID no longer a running worker),
+the last buffer and quitting Emacs end the worker by closing its input so
+it removes its own, and the raster budget is at most a quarter of the free
+space on that filesystem (Lean test: stale swept, running kept, killed
+swept by the next; ERT; verified on the host: no directories left after
+killed daemons). Also fixed on the way: a stopping worker's sentinel dropped
+the callbacks of the worker that replaced it
+** DONE Persistent raster tier: whole-page previews and sidebar thumbnails are
+kept across sessions in =$XDG_CACHE_HOME/vellumory/rasters= under their
+content address (document hash, page, size, theme, engine), trimmed to 256 MB
+oldest first at worker start (=VELLUMORY_PERSISTENT_BUDGET_MB=); sharp strips
+stay in the session's tmpfs (Lean test: two sessions, one render, trimming;
+ERT; on the host: the previews of a reopened document are not rendered again)
+
+* Emacs and Doom ecosystem
+** DONE Major mode for files, autoloads, menus, describe-mode, bookmarks, Imenu
+** DONE Evil normal-state map (counts, registers, history, mouse precedence)
+** DONE Doom module :tools vellumory: lazy loading, localleader + which-key,
+doom-modeline segment, popup rules, ESC, real buffers; verified live in a
+reproducible Doom on the user's exact Emacs (keys, wheel, which-key, modeline)
+** DONE Org links: =vellumory:FILE::PAGE::Y= store (exact position; selection or
+outline heading as description), follow, export (=#page=N= for HTML/LaTeX),
+completion; org-pdftools =pdf:= links open here when pdf-tools is absent (ERT)
+** DONE org-noter backend: follow, goto, precise (selection or click on any page),
+selected text, skeleton from the outline; ERT runs a real session
+** DONE org-noter in Doom: real-key note insertion (=i=, title, RET) creates the
+heading at the page; evil keys yield to org-noter's during a session; fixed a
+redisplay error with Doom's window-sticky line highlight (empty range, not nil)
+** DONE saveplace: measured first, saveplace did not disturb the exact restore
+(its goto-char lands on point 1 of the empty buffer, then Vellumory restores
+page 37 at its offset) but recorded a meaningless point for every document in
+its 400-entry list; documents now stay out of it, and an old entry is dropped
+when the document is next closed (GUI test with =save-place-mode=)
+** DONE SyncTeX through TeX Live's libsynctex: forward search with highlighted
+lines, backward search on C-mouse-1, AUCTeX viewer (region compilation
+included), chosen from =TeX-mode-hook= so Doom's :lang latex viewers cannot
+reorder it; Lean, ERT and live X click tests on a pinned pdflatex fixture
+** DONE Dired batches (=;=, Doom localleader): validate in one veraPDF run, one
+recorded edit per document, summary table, merge; ERT and a real-key GUI check
+** DONE consult, embark, project.el: =vellumory-consult-line= (M-s l; remaps
+consult-line and Doom's SPC s s) over every line of the text with page
+preview and the chosen line highlighted; hidden consult-buffer source of open
+documents (d); embark targets for the selection and the page in view, keymaps
+inheriting embark-general-map; project PDFs (ERT; real keys in Doom)
+** DONE GUI suite run inside Doom (=Review.lean doomgui=); it found and fixed
+links arriving after sharp tiles never gaining their image map
+
+* Standards and inspection
+** DONE Rich technical report by default on =I=; per-page boxes and resources
+** DONE Native attachments: list, open (content-addressed extraction), add, remove
+** DONE veraPDF validation (all built-in profiles), report UI, next-error
+** DONE Metadata editing: Info, catalog (/Lang, DisplayDocTitle) and XMP kept
+consistent via qpdf JSON and Adobe's XMP Toolkit (Exempi); PDF/UA-1 rules 7.1-8,
+7.1-10 and 7.2-34 fixed by it, PDF/A-1b 6.7.3 kept (a naive Info-only change
+fails it); form UI with real-key GUI check, undo byte-identical
+** DONE Edits keep PDF/A (veraPDF-checked for PDF/A-1b and -2b): EOL before
+endstream for every qpdf rewrite, no object streams for PDF/A-1
+** DONE PDF syntax view (QDF, font-lock, references, Imenu) and editing
+committed through fix-qdf as a recorded, undoable edit (ERT round trip)
+** DONE Annotations: highlight, underline, strike-out, squiggly, notes; list with
+edit and delete; hover text; recorded, deterministic, undoable; PDF/A-1b and
+-2b kept (printable popups, no PDF/A-1 highlights); quads round-trip and render
+exactly (a vertex-order bug was found on screen and is now tested)
+** DONE Digital signatures: OpenSSL CMS verification of the signed byte ranges
+(integrity), signer, trust with its reason, coverage and later changes; edits
+of signed documents ask first; undo restores the signed bytes (Lean against a
+mutool-signed fixture, trust via SSL_CERT_FILE, ERT)
+** DONE Form filling: text, checkbox, choice fields; read-only and signature
+fields refused; JavaScript never runs; widgets redrawn (fixed: values set on
+field objects left appearances stale); deterministic, undoable (Lean, ERT,
+real-key GUI check)
+** DONE Click-to-fill on the page (prompt by type, checkbox toggles), hover text;
+real clicks verified on a private Xvfb
+** DONE Fixed: mouse events inside image-map areas (links, annotations, form
+fields) arrive prefixed with the area id and were undefined, so clicking a link
+never followed it; every area id now binds the reader's mouse commands (ERT,
+real clicks)
+** DONE Checks beyond veraPDF (preflight, native): broken link and contents
+destinations read from the destinations themselves (MuPDF resolves a missing
+one to page 1), recoverable earlier versions, weak encryption, JavaScript, XFA,
+unembedded fonts, composite fonts without ToUnicode, boxes beyond the page,
+damaged xref, title, language, tagging, linearization; shown under veraPDF's
+report (=b=), CLI =vellumory preflight=; identical veraPDF checks grouped (Lean
+test with a broken fixture; ERT; real keys V and b on a private Xvfb; the
+ISO 32000 copy is found to use 40-bit RC4)
+
+* Reversible workflows
+** DONE Content-addressed durable snapshots, branching history tree, undo/redo,
+checkout, external-change capture, locking, atomic writes keeping permissions,
+hash verification on restore, deterministic edits; history theorems audited
+** DONE Tree UI (=vellumory-history=)
+** DONE Semantic diff between any two states (=d= in the history tree):
+pages aligned by text, word-level changes highlighted in the reader, metadata
+and structure by field; LCS soundness theorems audited
+
+* Document operations
+** DONE Rotate, delete, move, reorder, append/merge, extract, split, text export,
+lossless compression (pixel-identical verified), linearize, page labels, OCR
+** DONE Batch processing: =vellumory batch-validate= (one JVM, every input gets a
+row, unreadable files included), Dired batch edits recorded per document
+** DONE Stamps, watermarks and letterheads (qpdf overlay/underlay), recorded edits
+** DONE Encryption UI: AES-256 with print/modify/extract permissions, password
+prompt on open (again when wrong), decryption; passwords via stdin and private
+files, never argv or the history (Lean and ERT); fixed decryption of
+user-password files (the input check opened them without the password)
+
+* Org export
+** DONE Accessible, archival PDF: LuaLaTeX, \DocumentMetadata (lang, pdfstandard
+ua-2 and a-4f, tagging=on) through #+LATEX_CLASS_PRE; veraPDF accepts a real Org
+document (headings, list, table, link, inline and display math) as PDF/UA-2 +
+Tagged PDF and PDF/A-4f; /Lang fixed to the language tag (Org writes "English");
+validated and opened after export (ERT, sandboxed)
+** DONE PDF 2.0 metadata: report reads XMP where Info is absent; edits never add
+an Info dictionary to PDF 2.0, and PDF/A-4 keeps at most ModDate (veraPDF-checked)
+** DONE Typst export profile: ox-typst and =typst compile --pdf-standard
+a-2a,ua-1= (Typst 0.15.1), language regions split as Typst requires, validated
+against both with veraPDF (ERT on compiled code: PDF/A-2a 153 rules and
+PDF/UA-1 106 rules, none failed), =C-c C-e y v=
+** DONE Embedding the Org source in the PDF: the exported buffer becomes the
+document's associated file (=/AF=, =/AFRelationship /Source=, =text/x-org=),
+in both export routes (LaTeX PDF/A-4f + PDF/UA-2; Typst now PDF/A-3a +
+PDF/UA-1, which veraPDF accepts with the source inside, 0 failed rules)
+** DONE Associated files in the edit engine: =attach= takes a relationship
+(ISO 32000-2 14.13.2 names only), a MIME type from the extension, a description
+by default (PDF/UA-2 8.14.1 failed without one); PDF/A-3 and -4 default to
+Unspecified (veraPDF rule 6.9-4); PDF/A-1, -2 and base -4 refuse what they
+forbid. Found and fixed by test: qpdf keeps a replaced associated file inside
+the PDF and leaves =null= in =/AF= for a removed one (both now cleaned first); an
+indirect =/AF= array (LaTeX's, with MathML) was overwritten (now updated in
+place); qpdf 12.3.2 silently drops JSON updates of objects inside object streams
+it has not loaded (all JSON-update edits now work on a copy without object
+streams, as its manual advises, and regain them if the input had them)
+
+* Build and verification
+** DONE flake.nix records every dependency (Lean, lean4-cli, MuPDF, qpdf, veraPDF,
+ocrmypdf, OpenSSL, TeX Live libsynctex and a pdflatex SyncTeX fixture, corpus, pdf-tools, evil, Doom on the user's Emacs)
+** DONE Lean-only tooling: build driver, tests, GUI review, benchmarks, Doom review
+** DONE Headless ERT on Emacs 31.1 and 32.0.50; GUI ERT on 32.0.50 pgtk via emacsclient
+** DONE Screenshots inspected; they found and fixed a strip gap, a sidebar follow
+bug, a paper-white margin on the window's first line (now checked on exported
+frame pixels) and an off-by-one-strip jump when no row is wholly visible
+** DONE Headless ERT also on Emacs 29.4 and 30.2 (their batch mode runs no
+process sentinel once a file watch saw a change, so the tests watch no files
+there); CI on GitHub runs the suite on 29.4, 30.2, 31.1 and the development
+snapshot, builds the Nix package with its tests, and fails on any lint finding
+** DONE Used on the author's laptop (2026-10-30): Doom with Emacs 32.0.50 pgtk
+under Wayland, the Lisp installed by straight.el from a clone, the worker from
+the flake through a NixOS configuration.  The doctor reports every check
+passing; a 5019-page book opens; the manual is found beside the worker; on a
+copy of a paper, rotate, compress, undo and rotate back give a history tree
+with a branch, read from its buffer
+** DONE Memory measured against Evince, Papers and Okular (2026-10-30, three
+runs on one paper): 156–176 MiB with Emacs itself, from 211–218 MiB plus
+38 MiB of strips; Papers 165–166, Okular 191–197, Evince 142–144.  Found by
+measuring Emacs and the worker apart, heaptrack and the worker's mappings:
+freed memory kept by the C library (Emacs 528 MiB after 40 pages of ISO
+32000, 158 MiB once given back at rest) and a second buffer for every strip
+** TODO macOS: the flake declares Apple silicon (every dependency evaluates
+there), the code avoids calls only Linux has (a sweep without /proc tested
+in a namespace that hides it) and Clang compiles the native code without a
+warning; a CI job builds on macOS once the repository is public.  Not built
+on a Mac yet
+
+* Distinct project name
+Vellumory: exact-name searches returned no results (docs/research.org).
+Absolute nonexistence and trademark clearance are not provable here.
