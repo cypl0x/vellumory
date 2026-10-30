@@ -405,6 +405,15 @@ it draws with Cairo (X, pgtk), or captured from the screen on macOS."
   (and (display-graphic-p) (executable-find "magick")
        (or (fboundp 'x-export-frames) (executable-find "screencapture"))))
 
+(defun vellumory-gui--pause (seconds)
+  "Let SECONDS pass, redisplaying and reading process output meanwhile.
+Unlike `sit-for', which returns at once while input is pending (as on the
+macOS runner, where waits made with it did not wait)."
+  (let ((end (+ (float-time) seconds)))
+    (while (< (float-time) end)
+      (accept-process-output nil 0.05)
+      (redisplay t))))
+
 (defvar vellumory-gui--tolerance 0
   "How far a captured colour may be from the painted one, per channel.
 None for a frame Emacs exports; a screen capture on macOS is colour-managed
@@ -433,7 +442,7 @@ Return how many of its pixels make one frame pixel (2 on a Retina display)."
                (> (or (cdr (alist-get 'title-bar-size (frame-geometry))) 0) 0))
       (let ((position (frame-position))) (set-frame-position nil (car position) (cdr position)))
       (set-frame-parameter nil 'vellumory-gui-placed t)
-      (sit-for 0.2))
+      (vellumory-gui--pause 0.2))
     (setq vellumory-gui--tolerance 4)
     (redisplay t)
     (pcase-let ((`(,left ,top ,right ,bottom) (frame-edges nil 'native-edges)))
@@ -725,10 +734,10 @@ leaving returns to the reader at the page last shown."
                   (while (and (< (float-time) deadline)
                               (not (and (equal edges (setq edges (frame-edges frame 'native-edges)))
                                         (>= (- (nth 2 edges) (nth 0 edges)) monitor))))
-                    (sit-for 0.3))
+                    (vellumory-gui--pause 0.3))
                   ;; macOS reports the new size as its zoom into full screen
                   ;; starts; the screen shows the frame only once it ends.
-                  (when (eq window-system 'ns) (sit-for 1)))
+                  (when (eq window-system 'ns) (vellumory-gui--pause 1)))
                 (should (shown 0))
                 (should-not (window-parameter window 'mode-line-format))
                 (with-current-buffer presentation
