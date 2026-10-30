@@ -219,7 +219,10 @@ def Lane.stop (lane : Lane) : IO Unit := do
 
 /-! ## Requests -/
 
-def openFile (params : Json) : IO (Opened × Json) := do
+/-- Open the document PARAMS name. With SIZES, a directory, its pages' measurements
+    are kept there by content address and read back the next time: measuring
+    5,019 pages took 225 ms. -/
+def openFile (params : Json) (sizes : Option FilePath := none) : IO (Opened × Json) := do
   let path ← stringField params "path"
   let password := (params.getObjValAs? String "password").toOption.getD ""
   let info ← (FilePath.mk path).metadata
@@ -235,10 +238,9 @@ def openFile (params : Json) : IO (Opened × Json) := do
   let number (key : String) (default : Float) :=
     ((reflow.getD .null).getObjValAs? Float key).toOption.getD default
   let css := ((reflow.getD .null).getObjValAs? String "css").toOption.getD ""
-  let doc ← if reflow.isSome then
-      Native.openDocumentReflowed bytes magic password (number "width" 450) (number "height" 600) (number "em" 11) css
-    else Native.openDocumentAs bytes magic password
-  let sizes ← Native.pageSizes doc
+  -- The pages are measured, or their measurements read, once the hash is known.
+  let doc ← Native.openDocumentDeferred bytes magic password (number "width" 450) (number "height" 600)
+    (number "em" 11) css
   let parsed ← IO.monoNanosNow
   let hash ← IO.ofExcept (← IO.wait hashing)
   -- A reflowed document's pages are its layout: rasters and positions belong to
@@ -246,6 +248,16 @@ def openFile (params : Json) : IO (Opened × Json) := do
   let hash ← match reflow with
     | some r => if ← Native.reflowable doc then Native.sha256 (hash ++ r.compress).toUTF8 else pure hash
     | none => pure hash
+  let hashed ← IO.monoNanosNow
+  let cache ← match sizes with
+    | some dir => try
+        IO.FS.createDirAll dir
+        let key ← Native.sha256 s!"bounds {← Native.version} {hash}".toUTF8
+        pure (dir / (key ++ ".bounds")).toString
+      catch _ => pure ""
+    | none => pure ""
+  let measured ← Native.finishBounds doc cache
+  let sizes ← Native.pageSizes doc
   let finished ← IO.monoNanosNow
   let ms (a b : Nat) : Float := (b - a).toFloat / 1e6
   let pages := sizes.map fun (w, h) => Json.mkObj [("width", toJson w), ("height", toJson h)]
@@ -259,7 +271,8 @@ def openFile (params : Json) : IO (Opened × Json) := do
     ("page_mode", toJson (((← Native.displayPreferences doc).splitOn " ")[1]?.getD "")),
     ("bytes", toJson bytes.size), ("ms", toJson (ms started finished)),
     ("read_ms", toJson (ms started read)), ("parse_ms", toJson (ms read parsed)),
-    ("hash_wait_ms", toJson (ms parsed finished))])
+    ("hash_wait_ms", toJson (ms parsed hashed)), ("bounds_ms", toJson (ms hashed finished)),
+    ("bounds_cached", toJson (!measured))])
 
 def parseColor (json : Json) : Except String (UInt8 × UInt8 × UInt8 × UInt8) := do
   let parts : Array Nat ← fromJson? json
@@ -537,7 +550,7 @@ def serve : IO UInt32 := do
           ("tools", Json.mkObj [("qpdf", toJson Tools.qpdf), ("verapdf", toJson Tools.verapdf),
             ("ocrmypdf", toJson Tools.ocrmypdf)])])]
       | "open" =>
-        let (next, info) ← openFile params
+        let (next, info) ← openFile params (sizes := some (shared.persistent / "sizes"))
         opened := opened.insert (← optionalNat params "doc" 0) next
         shared.send <| Json.mkObj [("id", id), ("result", info)]
       | "close" =>

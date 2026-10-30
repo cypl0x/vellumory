@@ -1226,15 +1226,15 @@ window, goes on to the next page, and returns the pages at the page reached."
 (ert-deftest vellumory-gui-reflow-in-narrow-windows ()
   "With `vellumory-reflow-narrow-width', a window too narrow for the pages
 shows them reflowed, and the pages again once it is wide.  The threshold is
-half the window's width, so that the 30 columns split off are below it and
+half the window's width, so that the 20 columns split off are below it and
 the rest above, however wide the frame is."
   (skip-unless (display-graphic-p))
   (with-selected-window (get-buffer-window "reader.pdf" t)
-    (skip-unless (> (window-total-width) 70))
+    (skip-unless (> (window-total-width) 50))
     (let ((source (current-buffer)) (vellumory-reflow-narrow-width (/ (window-total-width) 2)) (narrow nil))
       (unwind-protect
           (progn
-            (setq narrow (split-window-right (- (window-total-width) 30)))
+            (setq narrow (split-window-right (- (window-total-width) 20)))
             (with-selected-window narrow (switch-to-buffer source))
             (let ((deadline (+ (float-time) 5)))
               (while (and (< (float-time) deadline)

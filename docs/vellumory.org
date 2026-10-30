@@ -3630,14 +3630,15 @@ In Doom, enable =:editor evil= and the module does it.
 #+cindex: disk usage
 #+cindex: files Vellumory writes
 
-| What                                  | Where (by default)                       |
-|---------------------------------------+------------------------------------------|
-| reading positions                     | =~/.local/state/vellumory=                 |
-| snapshots and edit histories          | =~/.local/share/vellumory=                 |
-| previews kept across sessions (256 MB at most) | =~/.cache/vellumory/rasters=      |
-| QDF files, virtual documents, attachments | =~/.cache/vellumory=                   |
-| copies of remote documents, conversions | =~/.cache/vellumory=                     |
-| the session's rendered strips         | under =$XDG_RUNTIME_DIR/vellumory=, removed on exit |
+| What                                           | Where (by default)                                  |
+|------------------------------------------------+-----------------------------------------------------|
+| reading positions                              | =~/.local/state/vellumory=                          |
+| snapshots and edit histories                   | =~/.local/share/vellumory=                          |
+| previews kept across sessions (256 MB at most) | =~/.cache/vellumory/rasters=                        |
+| page sizes of documents opened (same budget)   | =~/.cache/vellumory/rasters/sizes=                  |
+| QDF files, virtual documents, attachments      | =~/.cache/vellumory=                                |
+| copies of remote documents, conversions        | =~/.cache/vellumory=                                |
+| the session's rendered strips                  | under =$XDG_RUNTIME_DIR/vellumory=, removed on exit |
 
 Caches can be deleted at any time.  The store in =~/.local/share/vellumory=
 is not a cache: it holds your edit histories.

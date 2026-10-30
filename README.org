@@ -662,7 +662,9 @@ source, are in [[file:docs/reader-validation.org][docs/reader-validation.org]].
   or a change of the window's width: on a 5,019-page book (54 MB), byte
   compiled, 120 ms each time, after a fix of 2026-10-30 (it was 750 ms,
   walking lists once per page).  Moving through that book (next page,
-  scrolling, jumping, splitting a window) takes about 1 ms.
+  scrolling, jumping, splitting a window) takes about 1 ms.  Opening it
+  takes 0.8 s the first time and 0.5 s after: its pages' sizes are kept by
+  content address, as measuring them took the worker 280 ms.
 - Interpreted Lisp roughly doubles layout and redisplay work; the numbers
   hold for byte-compiled code only.
 
@@ -1389,6 +1391,7 @@ Emacs and the other way round.
 | reading positions                                      | =~/.local/state/vellumory=                     |
 | snapshots and edit histories (not a cache)             | =~/.local/share/vellumory= (=VELLUMORY_STORE=) |
 | previews kept across sessions (256 MB at most)         | =~/.cache/vellumory/rasters=                   |
+| page sizes of documents opened (in the same budget)    | =~/.cache/vellumory/rasters/sizes=             |
 | QDF files, virtual documents, attachments, conversions | =~/.cache/vellumory=                           |
 | the session's rendered strips                          | under =$XDG_RUNTIME_DIR=, removed on exit      |
 

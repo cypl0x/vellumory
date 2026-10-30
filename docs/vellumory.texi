@@ -5711,6 +5711,8 @@ In Doom@comma{} enable @samp{:editor evil} and the module does it.
 @tab @samp{~/.local/share/vellumory}
 @item previews kept across sessions (256 MB at most)
 @tab @samp{~/.cache/vellumory/rasters}
+@item page sizes of documents opened (same budget)
+@tab @samp{~/.cache/vellumory/rasters/sizes}
 @item QDF files@comma{} virtual documents@comma{} attachments
 @tab @samp{~/.cache/vellumory}
 @item copies of remote documents@comma{} conversions

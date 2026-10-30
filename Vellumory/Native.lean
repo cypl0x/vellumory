@@ -162,6 +162,18 @@ opaque openDocumentAs (bytes : @& ByteArray) (magic : @& String) (password : @& 
 opaque openDocumentReflowed (bytes : @& ByteArray) (magic password : @& String) (width height em : Float)
   (css : @& String) : IO Document
 
+/-- Like `openDocumentReflowed`, with the pages not measured yet: `finishBounds`
+    must follow before any other use of the document. -/
+@[extern "vellumory_native_open_deferred"]
+opaque openDocumentDeferred (bytes : @& ByteArray) (magic password : @& String) (width height em : Float)
+  (css : @& String) : IO Document
+
+/-- Measure the pages of a document opened deferred, or read their rectangles from
+    the cache file `path` ("": none) when it holds a usable one for every page.
+    True when they were measured, and then written there. -/
+@[extern "vellumory_native_finish_bounds"]
+opaque finishBounds (doc : @& Document) (path : @& String) : IO Bool
+
 /-- Whether the document reflows: its pages are a layout. -/
 @[extern "vellumory_native_reflowable"]
 opaque reflowable (doc : @& Document) : IO Bool

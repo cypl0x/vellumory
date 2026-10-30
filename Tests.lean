@@ -1087,6 +1087,7 @@ def testPersistentRasters : IO Unit := do
   IO.FS.withTempDir fun dir => do
     let pdf := dir / "doc.pdf"
     IO.FS.writeFile pdf Fixtures.reader
+    let opened : IO.Ref (Array Json) ← IO.mkRef #[]
     let session (n : Nat) (persist : Bool) : IO Json := do
       let child ← IO.Process.spawn {
           cmd := app.toString, args := #["serve"], stdin := .piped, stdout := .piped, stderr := .null,
@@ -1098,7 +1099,8 @@ def testPersistentRasters : IO Unit := do
         ("params", Json.mkObj [("page", toJson (1 : Nat)), ("width", toJson (120 : Nat)), ("top", toJson (0 : Nat)),
           ("bottom", toJson (160 : Nat)), ("persist", toJson persist)])]).compress
       child.stdin.flush
-      let _ ← child.stdout.getLine
+      let openReply ← IO.ofExcept (Json.parse (← child.stdout.getLine))
+      opened.modify (·.push ((openReply.getObjVal? "result").toOption.getD .null))
       let reply ← IO.ofExcept (Json.parse (← child.stdout.getLine))
       child.kill
       let _ ← child.wait
@@ -1112,6 +1114,23 @@ def testPersistentRasters : IO Unit := do
         (second.getObjValAs? Bool "cached").toOption == some true) "rendered once, found the second time"
     let sharp ← session 3 false
     ensure ((path sharp).startsWith (dir / "run3").toString) "sharp strips stay in the session"
+    -- Page measurements are kept by content address: measured by the first
+    -- session, read by the next, measured again when the cache is damaged.
+    let reads := (← opened.get).map fun r => (r.getObjValAs? Bool "bounds_cached").toOption
+    let pages := (← opened.get).map fun r => (r.getObjVal? "pages").toOption.map (·.compress)
+    ensure (reads == #[some false, some true, some true]) s!"page measurements read back: {reads}"
+    ensure (pages.all (· == pages[0]!) && pages[0]!.isSome) "page sizes from the cache are the measured ones"
+    let sizes := dir / "cache" / "vellumory" / "rasters" / "sizes"
+    let kept ← sizes.readDir
+    ensure (kept.size == 1) s!"one measurement file: {kept.map (·.fileName)}"
+    let file := (kept.map (·.path))[0]!
+    IO.FS.writeFile file "damaged"
+    let _ ← session 4 true
+    let after ← opened.get
+    ensure ((after[3]!.getObjValAs? Bool "bounds_cached").toOption == some false &&
+        (after[3]!.getObjVal? "pages").toOption.map (·.compress) == pages[0]!)
+      "a damaged measurement file is measured again"
+    ensure ((← IO.FS.readBinFile file).size > 7) "and written again"
     -- The budget trims the oldest first.
     let store := dir / "trim"
     IO.FS.createDirAll (store / "aa")

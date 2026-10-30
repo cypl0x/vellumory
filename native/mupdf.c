@@ -20,6 +20,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <openssl/evp.h>
 
 #define POOL_MAX 16
@@ -162,11 +163,27 @@ static fz_rect page_bounds(fz_context *ctx, fz_document *doc, pdf_document *pdf,
     return r;
 }
 
+/* A page's rectangle is usable: finite, and a positive size of at most 10^7 points. */
+static int valid_bounds(fz_rect r) {
+    double w = (double)r.x1 - r.x0, h = (double)r.y1 - r.y0;
+    return isfinite(r.x0) && isfinite(r.y0) && isfinite(w) && isfinite(h) && w > 0 && h > 0 && w <= 1e7 && h <= 1e7;
+}
+
+/* Measure every page of D into d->bounds (allocated by the caller). */
+static void measure_bounds(fz_context *ctx, v_document *d) {
+    pdf_document *pdf = pdf_document_from_fz_document(ctx, d->doc);
+    for (int i = 0; i < d->count; ++i) {
+        fz_rect r = page_bounds(ctx, d->doc, pdf, i);
+        if (!valid_bounds(r)) fz_throw(ctx, FZ_ERROR_ARGUMENT, "Invalid page dimensions on page %d", i + 1);
+        d->bounds[i] = r;
+    }
+}
+
 /* Open a document; a reflowable one (EPUB, FB2, XHTML) is laid out on pages of
    WIDTH × HEIGHT points with EM-point text and the user stylesheet CSS (empty:
    none), as DocView's EPUB font size and stylesheet. */
 static lean_obj_res open_document(b_lean_obj_arg bytes, b_lean_obj_arg magic, b_lean_obj_arg password,
-                                  double width, double height, double em, const char *css) {
+                                  double width, double height, double em, const char *css, int defer) {
     if (!(width >= 72 && width <= 14400 && height >= 72 && height <= 14400 && em >= 4 && em <= 144))
         return failure("A reflowed page is 72–14400 points a side with 4–144 point text");
     register_classes();
@@ -201,14 +218,10 @@ static lean_obj_res open_document(b_lean_obj_arg bytes, b_lean_obj_arg magic, b_
         }
         d->count = fz_count_pages(ctx, d->doc);
         if (d->count <= 0) fz_throw(ctx, FZ_ERROR_ARGUMENT, "Document contains no pages");
-        d->bounds = fz_malloc_array(ctx, d->count, fz_rect);
-        pdf_document *pdf = pdf_document_from_fz_document(ctx, d->doc);
-        for (int i = 0; i < d->count; ++i) {
-            fz_rect r = page_bounds(ctx, d->doc, pdf, i);
-            double w = r.x1 - r.x0, h = r.y1 - r.y0;
-            if (!isfinite(w) || !isfinite(h) || w <= 0 || h <= 0 || w > 1e7 || h > 1e7)
-                fz_throw(ctx, FZ_ERROR_ARGUMENT, "Invalid page dimensions on page %d", i + 1);
-            d->bounds[i] = r;
+        /* Deferred: `vellumory_native_finish_bounds' measures them, or reads them. */
+        if (!defer) {
+            d->bounds = fz_malloc_array(ctx, d->count, fz_rect);
+            measure_bounds(ctx, d);
         }
     }
     fz_always(ctx) { fz_drop_stream(ctx, stream); }
@@ -223,13 +236,93 @@ static lean_obj_res open_document(b_lean_obj_arg bytes, b_lean_obj_arg magic, b_
 lean_obj_res vellumory_native_open(b_lean_obj_arg bytes, b_lean_obj_arg magic,
         b_lean_obj_arg password, lean_obj_arg world) {
     (void)world;
-    return open_document(bytes, magic, password, 450, 600, 11, "");
+    return open_document(bytes, magic, password, 450, 600, 11, "", 0);
 }
 
 lean_obj_res vellumory_native_open_reflowed(b_lean_obj_arg bytes, b_lean_obj_arg magic, b_lean_obj_arg password,
         double width, double height, double em, b_lean_obj_arg css, lean_obj_arg world) {
     (void)world;
-    return open_document(bytes, magic, password, width, height, em, lean_string_cstr(css));
+    return open_document(bytes, magic, password, width, height, em, lean_string_cstr(css), 0);
+}
+
+/* Like `vellumory_native_open_reflowed', with the pages not measured yet:
+   `vellumory_native_finish_bounds' must follow before any other use. */
+lean_obj_res vellumory_native_open_deferred(b_lean_obj_arg bytes, b_lean_obj_arg magic, b_lean_obj_arg password,
+        double width, double height, double em, b_lean_obj_arg css, lean_obj_arg world) {
+    (void)world;
+    return open_document(bytes, magic, password, width, height, em, lean_string_cstr(css), 1);
+}
+
+/* Read all LENGTH bytes of FD into DATA; 0 on failure or a short file. */
+static int read_all(int fd, void *data, size_t length) {
+    unsigned char *p = data;
+    while (length) {
+        ssize_t n = read(fd, p, length);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) return 0;
+        p += n;
+        length -= (size_t)n;
+    }
+    return 1;
+}
+
+static int write_all(int fd, const void *data, size_t length);
+
+/* Write LENGTH bytes of DATA to PATH by way of a pending file renamed into
+   place; 0 on failure, which leaves nothing behind. */
+static int write_atomically(const char *path, const void *data, size_t length) {
+    static unsigned counter;
+    char pending[4096];
+    if (snprintf(pending, sizeof(pending), "%s.pending-%ld-%u", path, (long)getpid(),
+                 __atomic_fetch_add(&counter, 1, __ATOMIC_RELAXED)) >= (int)sizeof(pending))
+        return 0;
+    int fd = open(pending, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+    if (fd < 0) return 0;
+    int ok = write_all(fd, data, length);
+    if (close(fd) != 0) ok = 0;
+    if (ok && rename(pending, path) != 0) ok = 0;
+    if (!ok) unlink(pending);
+    return ok;
+}
+
+/* Measure the pages of a document opened deferred, or read their rectangles
+   from PATH ("": no cache): a file of exactly one rectangle per page, every
+   one usable. Measured, they are written there, whole or not at all; a cache
+   that cannot be written never keeps a document from opening. Returns
+   whether the pages were measured. */
+lean_obj_res vellumory_native_finish_bounds(b_lean_obj_arg handle, b_lean_obj_arg path, lean_obj_arg world) {
+    (void)world;
+    v_document *d = lean_get_external_data(handle);
+    if (d->bounds) return lean_io_result_mk_ok(lean_box(0));
+    fz_context *ctx = d->ctx;
+    const char *file = lean_string_cstr(path);
+    size_t want = (size_t)d->count * sizeof(fz_rect);
+    int measured = 0;
+    fz_var(measured);
+    pthread_mutex_lock(&d->doc_lock);
+    fz_try(ctx) {
+        d->bounds = fz_malloc_array(ctx, d->count, fz_rect);
+        int known = 0;
+        int fd = *file ? open(file, O_RDONLY | O_CLOEXEC) : -1;
+        if (fd >= 0) {
+            struct stat st;
+            known = fstat(fd, &st) == 0 && (size_t)st.st_size == want && read_all(fd, d->bounds, want);
+            close(fd);
+        }
+        for (int i = 0; known && i < d->count; ++i) known = valid_bounds(d->bounds[i]);
+        if (!known) {
+            measure_bounds(ctx, d);
+            measured = 1;
+            if (*file) (void)write_atomically(file, d->bounds, want);
+        }
+    }
+    fz_always(ctx) pthread_mutex_unlock(&d->doc_lock);
+    fz_catch(ctx) {
+        fz_free(ctx, d->bounds);
+        d->bounds = NULL;
+        return caught_failure(ctx);
+    }
+    return lean_io_result_mk_ok(lean_box(measured));
 }
 
 lean_obj_res vellumory_native_sizes(b_lean_obj_arg handle, lean_obj_arg world) {
