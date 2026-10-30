@@ -414,6 +414,20 @@ macOS runner, where waits made with it did not wait)."
       (accept-process-output nil 0.05)
       (redisplay t))))
 
+(defun vellumory-gui--await-full-screen (frame)
+  "Wait until presentation FRAME covers its monitor and holds there, 5 s at most.
+macOS goes full screen late and animated, reporting the new size as its zoom
+starts, so a second more there.  A presentation refits its page when its
+frame grows, which stops a transition under way: transitions are timed only
+after this.  (Without a window manager the frame never grows: 5 s, then on.)"
+  (let ((deadline (+ (float-time) 5)) (edges nil)
+        (monitor (nth 2 (alist-get 'geometry (frame-monitor-attributes frame)))))
+    (while (and (< (float-time) deadline)
+                (not (and (equal edges (setq edges (frame-edges frame 'native-edges)))
+                          (>= (- (nth 2 edges) (nth 0 edges)) monitor))))
+      (vellumory-gui--pause 0.3))
+    (when (eq window-system 'ns) (vellumory-gui--pause 1))))
+
 (defvar vellumory-gui--tolerance 0
   "How far a captured colour may be from the painted one, per channel.
 None for a frame Emacs exports; a screen capture on macOS is colour-managed
@@ -726,18 +740,7 @@ leaving returns to the reader at the page last shown."
                 (should-not (eq frame reader-frame))
                 (should (frame-parameter frame 'vellumory-presentation))
                 (should (eq (selected-frame) frame))
-                ;; macOS goes full screen late and animated: measure once the
-                ;; frame covers its monitor and holds there, the page fitted to
-                ;; it.  (Without a window manager it never does: 5 s, then on.)
-                (let ((deadline (+ (float-time) 5)) (edges nil)
-                      (monitor (nth 2 (alist-get 'geometry (frame-monitor-attributes frame)))))
-                  (while (and (< (float-time) deadline)
-                              (not (and (equal edges (setq edges (frame-edges frame 'native-edges)))
-                                        (>= (- (nth 2 edges) (nth 0 edges)) monitor))))
-                    (vellumory-gui--pause 0.3))
-                  ;; macOS reports the new size as its zoom into full screen
-                  ;; starts; the screen shows the frame only once it ends.
-                  (when (eq window-system 'ns) (vellumory-gui--pause 1)))
+                (vellumory-gui--await-full-screen frame)
                 (should (shown 0))
                 (should-not (window-parameter window 'mode-line-format))
                 (with-current-buffer presentation
@@ -855,6 +858,8 @@ old one for its /D seconds, then the page alone."
               (cl-flet ((shown (page) (vellumory-test-gui--wait
                                        (lambda () (redisplay t) (eql (car vellumory-present--shown) page)))))
                 (should (shown 0))
+                (vellumory-gui--await-full-screen (window-frame (get-buffer-window presentation t)))
+                (should (shown 0))
                 ;; The report of the next page, with its /Trans, is fetched ahead.
                 (should (vellumory-test-gui--wait (lambda () (assq 1 vellumory-present--info))))
                 (let ((started (float-time)) finished)
@@ -939,6 +944,7 @@ is dropped from the image cache once replaced, and the page ends alone."
                               ;; of a second or more), and the transition keeps time.
                               (should (>= vellumory-present--frames
                                           (- (ceiling (* 17.5 duration)) (ceiling (* 20 blocked))))))))
+                (vellumory-gui--await-full-screen (window-frame (get-buffer-window presentation t)))
                 (should (shown 1))
                 ;; Blue to green: a mix of both, neither pure.
                 (midway 2 (lambda (at)
