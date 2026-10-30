@@ -871,7 +871,7 @@ old one for its /D seconds, then the page alone."
                       (should (vellumory-gui--near (funcall pixel (+ (nth 0 edges) left (- w (/ w 20))) y) '(255 0 0))))
                     (should (shown 1))
                     (setq finished (float-time))
-                    (should (>= (- finished started) 0.5))
+                    (should (>= (- finished started) 1.0))
                     (should-not vellumory-present--animation)
                     ;; Then the page alone, whole and clickable.
                     (let ((image (get-text-property
@@ -909,7 +909,8 @@ is dropped from the image cache once replaced, and the page ends alone."
                           (midway (page check)
                             ;; Ahead: the next page's report, with its /Trans.
                             (should (vellumory-test-gui--wait (lambda () (assq page vellumory-present--info))))
-                            (let ((started (float-time)) (blocked 0.0))
+                            (let ((started (float-time)) (blocked 0.0)
+                                  (duration (alist-get 'duration (alist-get 'transition (alist-get page vellumory-present--info)))))
                               (vellumory-present-next)
                               (should (vellumory-test-gui--wait (lambda () vellumory-present--frame)))
                               ;; One canvas refreshed in place where Emacs has them.
@@ -926,7 +927,7 @@ is dropped from the image cache once replaced, and the page ends alone."
                                                               (+ (nth 1 edges) top (round (* fy (1- h))))))))
                                   (setq blocked (- (float-time) capture))))
                               (should (shown page))
-                              (should (>= (- (float-time) started) 0.75))
+                              (should (>= (- (float-time) started) (* 0.95 duration)))
                               (should-not vellumory-present--animation)
                               (should-not vellumory-present--frame)
                               (message "%s: %d frames in %.2f s, %.2f s of it capturing (%s)"
@@ -936,7 +937,8 @@ is dropped from the image cache once replaced, and the page ends alone."
                               ;; At least Okular's 20 frames a second while the test
                               ;; let Emacs draw: a capture blocks it (on macOS a tenth
                               ;; of a second or more), and the transition keeps time.
-                              (should (>= vellumory-present--frames (- 14 (ceiling (* 20 blocked))))))))
+                              (should (>= vellumory-present--frames
+                                          (- (ceiling (* 17.5 duration)) (ceiling (* 20 blocked))))))))
                 (should (shown 1))
                 ;; Blue to green: a mix of both, neither pure.
                 (midway 2 (lambda (at)

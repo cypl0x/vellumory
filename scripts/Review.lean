@@ -78,23 +78,25 @@ def xvfbCmd : Cmd := `[Cli|
     display : String; "Display name, e.g. :7."
 ]
 
-/-- Slides of one colour each: red; blue wipes in from the left in 0.6 s;
+/-- Slides of one colour each: red; blue wipes in from the left in 1.2 s;
     green fades in, red dissolves in, yellow glitters in from the left and
-    white flies in from the left, opaque, each in 0.8 s. -/
+    white flies in from the left, opaque, each in 1.6 s.  Long enough that a
+    capture mid-way lands mid-way even on macOS, where one takes half a
+    second. -/
 def slides : String :=
   Fixtures.document #["<< /Type /Catalog /Pages 2 0 R >>",
     "<< /Type /Pages /Kids [3 0 R 5 0 R 7 0 R 9 0 R 11 0 R 13 0 R] /Count 6 >>",
     "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 300] /Contents 4 0 R >>",
     Fixtures.stream "1 0 0 rg 0 0 400 300 re f\n",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 300] /Contents 6 0 R /Trans << /S /Wipe /D 0.6 /Di 0 >> >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 300] /Contents 6 0 R /Trans << /S /Wipe /D 1.2 /Di 0 >> >>",
     Fixtures.stream "0 0 1 rg 0 0 400 300 re f\n",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 300] /Contents 8 0 R /Trans << /S /Fade /D 0.8 >> >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 300] /Contents 8 0 R /Trans << /S /Fade /D 1.6 >> >>",
     Fixtures.stream "0 1 0 rg 0 0 400 300 re f\n",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 300] /Contents 10 0 R /Trans << /S /Dissolve /D 0.8 >> >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 300] /Contents 10 0 R /Trans << /S /Dissolve /D 1.6 >> >>",
     Fixtures.stream "1 0 0 rg 0 0 400 300 re f\n",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 300] /Contents 12 0 R /Trans << /S /Glitter /D 0.8 /Di 0 >> >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 300] /Contents 12 0 R /Trans << /S /Glitter /D 1.6 /Di 0 >> >>",
     Fixtures.stream "1 1 0 rg 0 0 400 300 re f\n",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 300] /Contents 14 0 R /Trans << /S /Fly /D 0.8 /Di 0 /B true >> >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 300] /Contents 14 0 R /Trans << /S /Fly /D 1.6 /Di 0 /B true >> >>",
     Fixtures.stream "1 1 1 rg 0 0 400 300 re f\n"]
 
 /-- Two pages of a black block with wide white margins: 100 points at the
