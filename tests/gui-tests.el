@@ -405,10 +405,15 @@ it draws with Cairo (X, pgtk), or captured from the screen on macOS."
   (and (display-graphic-p) (executable-find "magick")
        (or (fboundp 'x-export-frames) (executable-find "screencapture"))))
 
+(defvar vellumory-gui--tolerance 0
+  "How far a captured colour may be from the painted one, per channel.
+None for a frame Emacs exports; a screen capture on macOS is colour-managed
+(pure green came back (1 255 0), white (252 252 252)).")
+
 (defun vellumory-gui--near (a b)
-  "Whether colours A and B, lists of RGB, differ by at most 2 per channel.
-macOS colour-manages a screen capture: pure green comes back (1 255 0)."
-  (cl-every (lambda (x y) (<= (abs (- x y)) 2)) a b))
+  "Whether colours A and B, lists of RGB, are the same as captured.
+They differ by at most `vellumory-gui--tolerance' per channel."
+  (cl-every (lambda (x y) (<= (abs (- x y)) vellumory-gui--tolerance)) a b))
 
 (defun vellumory-gui--capture-frame (png)
   "Write what redisplay painted in the selected frame to PNG.
@@ -416,14 +421,19 @@ Return how many of its pixels make one frame pixel (2 on a Retina display)."
   (if (fboundp 'x-export-frames)
       (let ((coding-system-for-write 'no-conversion))
         (write-region (x-export-frames nil 'png) nil png nil 'silent)
+        (setq vellumory-gui--tolerance 0)
         1)
     ;; macOS: its Cocoa build exports no frames; capture the frame's area.
     ;; Emacs keeps the position it last set (`f->top_pos', nsfns.m), which
     ;; goes stale when macOS moves the window itself: setting it again makes
-    ;; both agree.
-    (let ((position (frame-position))) (set-frame-position nil (car position) (cdr position)))
+    ;; both agree.  Once per frame, never mid-animation again, and not in
+    ;; full screen, where macOS places the window.
+    (unless (or (frame-parameter nil 'vellumory-gui-placed) (frame-parameter nil 'fullscreen))
+      (let ((position (frame-position))) (set-frame-position nil (car position) (cdr position)))
+      (set-frame-parameter nil 'vellumory-gui-placed t)
+      (sit-for 0.2))
+    (setq vellumory-gui--tolerance 4)
     (redisplay t)
-    (sit-for 0.2)
     (pcase-let ((`(,left ,top ,right ,bottom) (frame-edges nil 'native-edges)))
       ;; Where the capture lands is the screen's say, not Emacs's: log both.
       (message "capture: native %S outer %S geometry %S" (frame-edges nil 'native-edges)
@@ -632,9 +642,9 @@ clipped rows; redisplay must keep the exact pixel position anyway."
                      (y (+ (nth 1 edges) (/ (vellumory--row-height row) 2)))
                      (left (+ (nth 0 edges) vellumory--margin)))
                 (vellumory-gui--with-frame-pixels pixel
-                  (should (equal (funcall pixel (+ left 10) y) '(255 255 255)))
-                  (should (equal (funcall pixel (+ left vellumory--width (/ vellumory-spread-gap 2)) y) desk))
-                  (should (equal (funcall pixel (+ left vellumory--width vellumory-spread-gap 10) y)
+                  (should (vellumory-gui--near (funcall pixel (+ left 10) y) '(255 255 255)))
+                  (should (vellumory-gui--near (funcall pixel (+ left vellumory--width (/ vellumory-spread-gap 2)) y) desk))
+                  (should (vellumory-gui--near (funcall pixel (+ left vellumory--width vellumory-spread-gap 10) y)
                                  '(255 255 255))))))
             ;; Next goes to the next spread; cycling returns to single pages.
             (vellumory-next-page)
@@ -719,10 +729,10 @@ leaving returns to the reader at the page last shown."
                                (round (* (buffer-local-value 'vellumory--scale buffer) w))))
                     (should (or (> left 0) (> top 0)))
                     (vellumory-gui--with-frame-pixels pixel
-                      (should (equal (funcall pixel (+ x0 6) (+ y0 h -6)) '(255 255 255)))
-                      (when (> left 1) (should (equal (funcall pixel (+ (nth 0 edges) (/ left 2)) (+ y0 (/ h 2)))
+                      (should (vellumory-gui--near (funcall pixel (+ x0 6) (+ y0 h -6)) '(255 255 255)))
+                      (when (> left 1) (should (vellumory-gui--near (funcall pixel (+ (nth 0 edges) (/ left 2)) (+ y0 (/ h 2)))
                                                       '(0 0 0))))
-                      (when (> top 1) (should (equal (funcall pixel (+ x0 (/ w 2)) (+ (nth 1 edges) (/ top 2)))
+                      (when (> top 1) (should (vellumory-gui--near (funcall pixel (+ x0 (/ w 2)) (+ (nth 1 edges) (/ top 2)))
                                                      '(0 0 0)))))
                     ;; The first page's link (points 40–300 × 32–77) goes to page 3.
                     (let* ((k (/ w 612.0))
@@ -741,7 +751,7 @@ leaving returns to the reader at the page last shown."
                     (redisplay t)
                     (should-not (text-property-any (point-min) (point-max) 'vellumory-present-page 1))
                     (vellumory-gui--with-frame-pixels pixel
-                      (should (equal (funcall pixel (+ x0 6) (+ y0 h -6)) '(0 0 0))))
+                      (should (vellumory-gui--near (funcall pixel (+ x0 6) (+ y0 h -6)) '(0 0 0))))
                     (vellumory-present-black)
                     (should (shown 1))
                     (vellumory-present-quit)))
@@ -833,8 +843,8 @@ old one for its /D seconds, then the page alone."
                                (y (+ (nth 1 edges) top (/ h 2))))
                     (redisplay t)
                     (vellumory-gui--with-frame-pixels pixel
-                      (should (equal (funcall pixel (+ (nth 0 edges) left (/ w 20)) y) '(0 0 255)))
-                      (should (equal (funcall pixel (+ (nth 0 edges) left (- w (/ w 20))) y) '(255 0 0))))
+                      (should (vellumory-gui--near (funcall pixel (+ (nth 0 edges) left (/ w 20)) y) '(0 0 255)))
+                      (should (vellumory-gui--near (funcall pixel (+ (nth 0 edges) left (- w (/ w 20))) y) '(255 0 0))))
                     (should (shown 1))
                     (setq finished (float-time))
                     (should (>= (- finished started) 0.5))
@@ -844,7 +854,7 @@ old one for its /D seconds, then the page alone."
                                   (text-property-any (point-min) (point-max) 'vellumory-present-page 1) 'display)))
                       (should (eq (car image) 'image)))
                     (vellumory-gui--with-frame-pixels pixel
-                      (should (equal (funcall pixel (+ (nth 0 edges) left (- w (/ w 20))) y) '(0 0 255))))))
+                      (should (vellumory-gui--near (funcall pixel (+ (nth 0 edges) left (- w (/ w 20))) y) '(0 0 255))))))
                 ;; Going back: page 1 has no /Trans, so it cuts.
                 (vellumory-present-previous)
                 (should (shown 0))
@@ -919,12 +929,12 @@ is dropped from the image cache once replaced, and the page ends alone."
                                 (should (and (> red 30) (> green 30)))))))
                 ;; Red to yellow from the left: yellow on the left, red on the right.
                 (midway 4 (lambda (at)
-                            (should (equal (funcall at 0.03 0.5) '(255 255 0)))
-                            (should (equal (funcall at 0.97 0.5) '(255 0 0)))))
+                            (should (vellumory-gui--near (funcall at 0.03 0.5) '(255 255 0)))
+                            (should (vellumory-gui--near (funcall at 0.97 0.5) '(255 0 0)))))
                 ;; Yellow to white flying in from the left, opaque: white on the left only.
                 (midway 5 (lambda (at)
-                            (should (equal (funcall at 0.03 0.5) '(255 255 255)))
-                            (should (equal (funcall at 0.97 0.5) '(255 255 0)))))
+                            (should (vellumory-gui--near (funcall at 0.03 0.5) '(255 255 255)))
+                            (should (vellumory-gui--near (funcall at 0.97 0.5) '(255 255 0)))))
                 (vellumory-present-quit))))
         (when (buffer-live-p presentation) (kill-buffer presentation))
         (when (buffer-live-p buffer) (vellumory-gui--kill buffer))
@@ -971,7 +981,7 @@ lines and words through MuPDF's characters, and v $ y copies a whole line."
                                                         collect (list (apply #'+ (funcall pixel (+ x dx) (+ y dy))) dx dy)))
                                       (lambda (a b) (< (car a) (car b)))))))
                 (should (< (min (apply #'+ (funcall pixel (1- x) y)) (apply #'+ (funcall pixel x y))) 600))
-                (should (equal (funcall pixel (- x 6) y) '(255 255 255)))))
+                (should (vellumory-gui--near (funcall pixel (- x 6) y) '(255 255 255)))))
             ;; Words: "Line 1: text" — w stops at 1, at the colon, at text.
             (vellumory-caret-forward-word)
             (should (equal (vellumory-caret--char vellumory-caret--pos) "1"))
@@ -1098,10 +1108,10 @@ when the window changes size; another zoom ends it."
                                (char (frame-char-width)) (pad vellumory-content-padding))
                           (vellumory-gui--with-frame-pixels pixel
                             ;; Paper at both edges, ink just inside the padding (to a column).
-                            (should (equal (funcall pixel (+ (nth 0 edges) 2) y) '(255 255 255)))
-                            (should (equal (funcall pixel (- (nth 2 edges) 3) y) '(255 255 255)))
-                            (should (equal (funcall pixel (+ (nth 0 edges) pad char) y) '(0 0 0)))
-                            (should (equal (funcall pixel (- (nth 2 edges) pad char) y) '(0 0 0)))))))
+                            (should (vellumory-gui--near (funcall pixel (+ (nth 0 edges) 2) y) '(255 255 255)))
+                            (should (vellumory-gui--near (funcall pixel (- (nth 2 edges) 3) y) '(255 255 255)))
+                            (should (vellumory-gui--near (funcall pixel (+ (nth 0 edges) pad char) y) '(0 0 0)))
+                            (should (vellumory-gui--near (funcall pixel (- (nth 2 edges) pad char) y) '(0 0 0)))))))
               ;; 412 of 612 points are content: about 1.49 times the page width.
               (should (< 1.4 vellumory--zoom 1.55))
               (check)
