@@ -1112,6 +1112,35 @@ margin changed, keeping every window's place."
         (vellumory--pump))))
   (vellumory--update-thumbnails))
 
+(defun vellumory--tick (buffer)
+  "Refresh BUFFER, and schedule the next refresh of it.
+That is in 0.2 s while documents are read, in 1 s once nothing was read for
+five seconds.  Hooks report most changes of the view at once; this catches
+the rest, and an idle Emacs wakes a fifth as often (it measured 300 wakeups
+a minute for one open document)."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (unwind-protect (vellumory--refresh)
+        (when (buffer-live-p buffer)
+          (setq vellumory--timer
+                (run-with-timer (if (< (- (float-time) vellumory--gc-activity) 5) 0.2 1.0)
+                                nil #'vellumory--tick buffer)))))))
+
+(defvar-local vellumory--scroll-refresh nil "A refresh is due after a window scrolled.")
+
+(defun vellumory--window-scrolled (window _start)
+  "Buffer-local `window-scroll-functions' entry for WINDOW.
+Redisplay runs it, so the refresh comes just after, once however many
+redisplays scrolled: as soon as notes scroll the document, idle or not."
+  (let ((buffer (window-buffer window)))
+    (unless (buffer-local-value 'vellumory--scroll-refresh buffer)
+      (with-current-buffer buffer (setq vellumory--scroll-refresh t))
+      (run-at-time 0 nil (lambda ()
+                           (when (buffer-live-p buffer)
+                             (with-current-buffer buffer
+                               (setq vellumory--scroll-refresh nil)
+                               (vellumory--refresh))))))))
+
 (defun vellumory--window-changed (window)
   "Buffer-local `window-size-change-functions' entry for WINDOW.
 The refresh places a resized window again (`vellumory--note-windows')."
@@ -2150,10 +2179,10 @@ old entry is dropped when it is next closed."
   (vellumory--start)
   (vellumory-reload)
   (vellumory--watch-file)
+  ;; Scrolled by other means than this mode's commands, from notes say.
+  (add-hook 'window-scroll-functions #'vellumory--window-scrolled nil t)
   (let ((buffer (current-buffer)))
-    (setq vellumory--timer
-          (run-with-timer .2 .2 (lambda () (when (buffer-live-p buffer)
-                                             (with-current-buffer buffer (vellumory--refresh))))))
+    (vellumory--tick buffer)
     (setq vellumory--state-timer
           (run-with-idle-timer 2 t (lambda () (when (buffer-live-p buffer)
                                                (with-current-buffer buffer (vellumory--save-position))))))))

@@ -650,7 +650,10 @@ Evince (4–6 at rest).  After 30 seconds without reading
 (=vellumory-deep-rest-delay=) the worker also drops what it keeps to render
 quickly, display lists and decoded images: a scanned document of 10 pages
 went from 142 MB to 58 MB, and its next page then rendered in 15 ms, as the
-first ones did.  On a long document the order changes: on a
+first ones did.  Idle with a document open, Emacs used 0.02–0.03 s of CPU a
+minute (an empty Emacs 0.00) and the worker none: the view is checked five
+times a second while you read, once a second after five quiet seconds.  On
+a long document the order changes: on a
 5,019-page book (54 MB), two runs each, with byte-compiled Lisp:
 
 | Viewer    | Open, first change | Open, settled | Jump, settled | Down, first change | Memory      |

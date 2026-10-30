@@ -1427,3 +1427,40 @@ reader shows it."
         (with-current-buffer reader (set-buffer-modified-p nil))
         (vellumory-gui--kill reader))
       (delete-directory dir t))))
+
+(ert-deftest vellumory-gui-scrolled-from-notes-refreshes-at-once ()
+  "Scrolled from another window, the document refreshes at once, not at its
+slow idle tick, which this test stops: by its own command where Emacs calls
+it (`scroll-other-window' follows the remap since Emacs 28), and by
+`window-scroll-functions' where code sets the window's start itself."
+  (skip-unless (display-graphic-p))
+  (let* ((reader (get-buffer-window "reader.pdf" t))
+         (buffer (window-buffer reader))
+         (notes (get-buffer-create "*vellumory test notes*")))
+    (with-selected-window reader
+      (vellumory-first-page)
+      (vellumory-gui--settle))
+    (with-current-buffer buffer (cancel-timer vellumory--timer))
+    (let ((other (with-selected-window reader (split-window-right))))
+      (unwind-protect
+          (with-selected-window other
+            (switch-to-buffer notes)
+            (let ((before (with-current-buffer buffer vellumory--geometry))
+                  (other-window-scroll-buffer buffer))
+              (scroll-other-window 2)
+              (should (vellumory-gui--wait-for
+                       (lambda () (not (equal (buffer-local-value 'vellumory--geometry buffer) before)))
+                       0.5))
+              (setq before (buffer-local-value 'vellumory--geometry buffer))
+              (set-window-start reader (with-current-buffer buffer
+                                         (vellumory--row-position (aref vellumory--rows 4))))
+              (redisplay t)
+              (should (vellumory-gui--wait-for
+                       (lambda () (not (equal (buffer-local-value 'vellumory--geometry buffer) before)))
+                       0.5))))
+        (delete-window other)
+        (kill-buffer notes)
+        (with-current-buffer buffer (vellumory--tick buffer))
+        (with-selected-window reader
+          (vellumory-first-page)
+          (vellumory-gui--settle))))))
