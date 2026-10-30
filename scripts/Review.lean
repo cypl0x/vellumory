@@ -717,6 +717,10 @@ def processTree (pid : Nat) : IO (Array Nat) := do
 structure Usage where
   cpu : Float := 0
   rss : Nat := 0
+  /-- Proportional set size: shared pages divided among the processes using
+      them, so that a viewer of two processes (Emacs and its worker) does not
+      count the libraries both map twice, as summed resident sets do. -/
+  pss : Nat := 0
   peak : Nat := 0
 
 def processUsage (ticks : Float) (pid : Nat) : IO Usage := do
@@ -729,7 +733,11 @@ def processUsage (ticks : Float) (pid : Nat) : IO Usage := do
     let kib (key : String) := ((status.splitOn "\n").findSome? fun line =>
       if line.startsWith key then ((line.drop key.length).trimAscii.toString.splitOn " ")[0]? >>= String.toNat?
       else none).getD 0
-    return { cpu := (tick 11 + tick 12) / ticks, rss := kib "VmRSS:", peak := kib "VmHWM:" }
+    let rollup ← try IO.FS.readFile s!"/proc/{pid}/smaps_rollup" catch _ => pure ""
+    let pss := ((rollup.splitOn "\n").findSome? fun line =>
+      if line.startsWith "Pss:" then ((line.drop 4).trimAscii.toString.splitOn " ")[0]? >>= String.toNat?
+      else none).getD 0
+    return { cpu := (tick 11 + tick 12) / ticks, rss := kib "VmRSS:", pss, peak := kib "VmHWM:" }
   catch _ => return {}
 
 /-- The use of PID and its descendants, summed. -/
@@ -737,7 +745,8 @@ def treeUsage (ticks : Float) (pid : Nat) : IO Usage := do
   let mut total : Usage := {}
   for p in ← processTree pid do
     let u ← processUsage ticks p
-    total := { cpu := total.cpu + u.cpu, rss := total.rss + u.rss, peak := total.peak + u.peak }
+    total := { cpu := total.cpu + u.cpu, rss := total.rss + u.rss, pss := total.pss + u.pss,
+               peak := total.peak + u.peak }
   return total
 
 /-- During the steps: CPU seconds of the viewer's processes and of the X
@@ -748,6 +757,8 @@ structure StepUsage where
   server : Option Float
   rss : Nat
   rested : Nat
+  pss : Nat
+  restedPss : Nat
   peak : Nat
 
 /-- The script of tests/screen-bench.el after opening, as a user's input to
@@ -811,7 +822,8 @@ def readByInput (display window : String) (prompt : Array (Array String)) (refoc
   let _ ← xdotool.wait
   let serverCpu := do return (← serverAfter).cpu - (← serverBefore).cpu
   return (marks, { viewer := after.cpu - before.cpu, server := serverCpu, rss := after.rss,
-                   rested := rested.rss, peak := max after.peak rested.peak })
+                   rested := rested.rss, pss := after.pss, restedPss := rested.pss,
+                   peak := max after.peak rested.peak })
 
 /-- A reader outside Emacs, started as a user starts it, with a fresh home set
     up for the same reading as the viewers in Emacs: fit width, no sidebar, a
@@ -997,6 +1009,7 @@ def figures (run : ScreenRun) : List (String × Option Float) :=
   match run.usage with
   | some u => [("CPU ms", some (u.viewer * 1000)), ("X server CPU ms", u.server.map (· * 1000)),
       ("RSS MiB", some (u.rss.toFloat / 1024)), ("rested RSS MiB", some (u.rested.toFloat / 1024)),
+      ("PSS MiB", some (u.pss.toFloat / 1024)), ("rested PSS MiB", some (u.restedPss.toFloat / 1024)),
       ("peak RSS MiB", some (u.peak.toFloat / 1024))]
   | none => []
 
@@ -1056,7 +1069,7 @@ def screenBench (p : Parsed) : IO UInt32 := do
         let steps (kind : String) :=
           let s := pick kind
           s!"{ms (median (s.map (·.1)))}, {ms (if s.isEmpty then none else some (s.foldl (fun m (f, _) => max m f) 0))} / {ms (median (s.map (·.2)))} ({s.size}/30)"
-        IO.println s!"{column}{ms (opened.map (·.1))} / {ms (opened.map (·.2))}   {ms (median (jumps.map (·.1)))} / {ms (median (jumps.map (·.2)))} ({jumps.size}/3)   key {steps "step key"}   wheel {steps "step wheel"}   CPU {ms (some (usage.viewer * 1000))} ms (X {ms (usage.server.map (· * 1000))} ms)   {usage.rss / 1024} MiB, rested {usage.rested / 1024} (peak {usage.peak / 1024})"
+        IO.println s!"{column}{ms (opened.map (·.1))} / {ms (opened.map (·.2))}   {ms (median (jumps.map (·.1)))} / {ms (median (jumps.map (·.2)))} ({jumps.size}/3)   key {steps "step key"}   wheel {steps "step wheel"}   CPU {ms (some (usage.viewer * 1000))} ms (X {ms (usage.server.map (· * 1000))} ms)   {usage.rss / 1024} MiB, rested {usage.rested / 1024} (peak {usage.peak / 1024}); PSS {usage.pss / 1024}, rested {usage.restedPss / 1024}"
       else
         let steps := pick "step"
         let worst := steps.foldl (fun m (f, _) => max m f) 0
