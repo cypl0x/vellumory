@@ -506,8 +506,10 @@ What pdf-tools still does that Vellumory does not is in the next section.
   be moved.
 - *doc-tools* renders every page when a file opens, so its scrolling is
   smooth too: worst step 7.0–9.5 ms against Vellumory's 6.1–6.6 ms.
-- *Vellumory* needs a worker you build yourself today, has been tested only
-  on Linux, has no print command, and is at its first release.
+- *Vellumory* needs a worker you build yourself today, has been used only
+  on Linux (CI also runs its tests, graphical ones included, on macOS), has
+  no print command, and is at its first release.  Of the desktop readers,
+  Evince holds 15–25 MiB less memory than Vellumory with Emacs counted.
 
 ** Other and upcoming packages
 :PROPERTIES:

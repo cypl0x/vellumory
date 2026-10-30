@@ -717,6 +717,13 @@ leaving returns to the reader at the page last shown."
                 (should-not (eq frame reader-frame))
                 (should (frame-parameter frame 'vellumory-presentation))
                 (should (eq (selected-frame) frame))
+                ;; macOS animates going full screen: measure once the frame's
+                ;; size holds, and the page is fitted to it.
+                (let ((deadline (+ (float-time) 5)) (edges nil))
+                  (while (and (< (float-time) deadline)
+                              (not (equal edges (setq edges (frame-edges frame 'native-edges)))))
+                    (sit-for 0.3)))
+                (should (shown 0))
                 (should-not (window-parameter window 'mode-line-format))
                 (with-current-buffer presentation
                   (pcase-let* ((`(,w ,h ,left ,top) (vellumory-present--fit 0))
