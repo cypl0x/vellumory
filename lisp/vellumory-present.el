@@ -723,6 +723,12 @@ A frame is kept when it is the only visible one."
     (alist-get 'geometry (or other here))))
 
 ;;;###autoload
+(defun vellumory-present--covers-monitor-p (frame)
+  "Whether FRAME is as wide as its monitor, as a full-screen frame is."
+  (let ((edges (frame-edges frame 'native-edges))
+        (monitor (nth 2 (alist-get 'geometry (frame-monitor-attributes frame)))))
+    (and monitor (>= (- (nth 2 edges) (nth 0 edges)) monitor))))
+
 (defun vellumory-present (&optional from-start)
   "Present this document full screen from the current page (FROM-START: the first).
 \\<vellumory-presentation-mode-map>\\[vellumory-present-next] next, \
@@ -751,11 +757,19 @@ A frame is kept when it is the only visible one."
                                 (unsplittable . t)))))
     (select-frame-set-input-focus frame)
     ;; A window manager may drop a fullscreen request made before the window is
-    ;; mapped (xfwm4 did, for pgtk on X): ask again once it shows.
+    ;; mapped (xfwm4 did, for pgtk on X): ask again once it shows.  macOS drops
+    ;; one made while another window leaves full screen, keeping the parameter:
+    ;; there, ask again for as long as the frame does not cover its monitor.
     (run-with-timer 0.2 nil (lambda ()
                               (when (and (frame-live-p frame)
                                          (not (eq (frame-parameter frame 'fullscreen) 'fullboth)))
                                 (set-frame-parameter frame 'fullscreen 'fullboth))))
+    (when (eq (window-system frame) 'ns)
+      (dolist (delay '(1.5 3 5))
+        (run-with-timer delay nil (lambda ()
+                                    (when (and (frame-live-p frame) (not (vellumory-present--covers-monitor-p frame)))
+                                      (set-frame-parameter frame 'fullscreen nil)
+                                      (set-frame-parameter frame 'fullscreen 'fullboth))))))
     (let ((window (frame-root-window frame)))
       (set-window-buffer window buffer)
       (set-window-dedicated-p window t)
