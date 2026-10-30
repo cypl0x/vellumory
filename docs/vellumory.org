@@ -3240,6 +3240,11 @@ reason.
 - User Option: vellumory-gc-threshold :: The garbage collection threshold
   while reading moves and while pages are laid out; garbage is collected
   once reading rests.  Default: ~67108864~ (64 MiB).
+- User Option: vellumory-deep-rest-delay :: Seconds without reading after
+  which the worker drops its caches: display lists, recent pages' text and
+  decoded images, which make the next render fast and are made again when
+  needed.  A scanned document of 10 pages kept 142 MB in the worker, 58 MB
+  without them.  ~nil~ keeps them while documents are open.  Default: ~30~.
 - User Option: vellumory-gc-idle-delay :: Seconds reading must rest before
   the garbage it left is collected, so that collections do not fall into a
   scroll step.  ~nil~ lets Emacs collect as usual.  When ~gcmh-mode~ is on (as

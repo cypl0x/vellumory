@@ -646,7 +646,11 @@ Lisp, with a second sample three seconds after the last step:
 | Okular    | 190–192 MiB     | 190–192 MiB         |
 
 Vellumory now holds less than Papers and Okular, and 5–12 MiB more than
-Evince (4–6 at rest).  On a long document the order changes: on a
+Evince (4–6 at rest).  After 30 seconds without reading
+(=vellumory-deep-rest-delay=) the worker also drops what it keeps to render
+quickly, display lists and decoded images: a scanned document of 10 pages
+went from 142 MB to 58 MB, and its next page then rendered in 15 ms, as the
+first ones did.  On a long document the order changes: on a
 5,019-page book (54 MB), two runs each, with byte-compiled Lisp:
 
 | Viewer    | Open, first change | Open, settled | Jump, settled | Down, first change | Memory      |
@@ -1056,6 +1060,7 @@ menu).  The defaults are meant to work without configuration.
 | =vellumory-sync-tex-viewer=         | =t=                               | become AUCTeX's PDF viewer                                     |
 | =vellumory-org-export-standards=    | =("ua-2" "a-4f")=                 | standards of the LaTeX Org export                              |
 | =vellumory-gc-threshold=            | 64 MiB                            | GC threshold while the view moves (left to gcmh when it is on) |
+| =vellumory-deep-rest-delay=         | 30 (seconds)                      | after this long without reading the worker drops its caches    |
 
 The rendering options (=vellumory-strip-height=, =vellumory-refine-delay=,
 =vellumory-prefetch-screens=, ...) come from measurements; change them

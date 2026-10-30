@@ -1035,6 +1035,18 @@ def testNative : IO Unit := do
     ensure (stillOpen == full.extract 0 (612 * 10 * 3)) "opened bytes changed after source replacement"
   IO.println "PASS native rendering, tiles, themes, overlays, cancellation, concurrency, store and immutable bytes"
 
+/-- Dropping a document's caches changes nothing it shows: the same pixels and
+    text after, made again from the document. -/
+def testForgetCaches : IO Unit := do
+  let doc ← Native.openDocument Fixtures.reader.toUTF8 ""
+  let before ← Native.render doc 1 612 0 400
+  let text ← Native.pageText doc 1
+  Native.forgetCaches doc
+  Native.forgetCaches doc
+  ensure ((← Native.render doc 1 612 0 400) == before) "a render after dropping the caches differs"
+  ensure ((← Native.pageText doc 1) == text && !text.isEmpty) "the text after dropping the caches differs"
+  IO.println "PASS caches dropped and made again, the same pixels and text"
+
 /-- End-to-end lanes: every request gets exactly one reply, cancellation is
     acknowledged, and replies may arrive out of order. -/
 def testWorkerProtocol : IO Unit := do
@@ -1553,6 +1565,7 @@ def main (args : List String) : IO UInt32 := do
       testCli
       testNative
       testSearch
+      testForgetCaches
       testWorkerProtocol
       testWorkerDocuments
       testTransitionFrames

@@ -376,6 +376,11 @@ opaque cores : IO UInt32
 @[extern "vellumory_native_process_alive"]
 opaque processAlive (pid : UInt32) : IO Bool
 
+/-- Drop the document's caches (display lists, recent pages' text, MuPDF's store
+    of decoded fonts and images); they are made again when needed. -/
+@[extern "vellumory_native_forget_caches"]
+opaque forgetCaches (doc : @& Document) : IO Unit
+
 /-- Give memory the C library keeps after freeing back to the system (glibc);
     true when some was. -/
 @[extern "vellumory_native_trim_memory"]

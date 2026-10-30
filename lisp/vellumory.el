@@ -136,6 +136,12 @@ inverts one document's pages."
 That is the window's height to the power 2/3, about 96 pixels in a window
 900 pixels high.  Fast notches scroll as far each; trackpads scroll exactly."
   :type '(choice (const :tag "As GTK" nil) (natnum :tag "Pixels")))
+(defcustom vellumory-deep-rest-delay 30
+  "Seconds without reading after which the worker drops its caches, or nil.
+Display lists, recent pages' text and decoded images make the next render
+fast; after a pause this long they are made again when needed.  A scanned
+document of 10 pages kept 142 MB in the worker, 58 MB without them."
+  :type '(choice (const :tag "Keep them while documents are open" nil) (number :tag "Seconds")))
 (defcustom vellumory-reflow-narrow-width nil
   "Show documents reflowed in windows narrower than this many columns.
 nil never does; with a number, a window too narrow for the pages shows the
@@ -665,7 +671,33 @@ Emacs and the worker give it back here, as reading rests."
   (dolist (file (delete-dups vellumory--released-files)) (clear-image-cache file))
   (setq vellumory--released-files nil)
   (when (fboundp 'malloc-trim) (malloc-trim))
-  (when (process-live-p vellumory--process) (vellumory--rpc "rest" nil nil)))
+  (vellumory--tell-worker "rest")
+  (when (and vellumory-deep-rest-delay (not (timerp vellumory--deep-rest-timer)))
+    (setq vellumory--deep-rest-timer (run-with-timer vellumory-deep-rest-delay nil #'vellumory--deep-rest))))
+
+(defun vellumory--tell-worker (method &optional params)
+  "Send METHOD with PARAMS, an alist, to the shared worker, if it runs.
+For requests about no document, whose replies nobody awaits: from a timer,
+whatever buffer is current."
+  (when (process-live-p vellumory--worker)
+    (process-send-string
+     vellumory--worker
+     (concat (json-serialize `((id . ,(cl-incf vellumory--worker-serial)) (method . ,method)
+                               (params . ,(or params #s(hash-table)))))
+             "\n"))))
+
+(defvar vellumory--deep-rest-timer nil)
+
+(defun vellumory--deep-rest ()
+  "Have the worker drop its caches once nothing was read for a while.
+See `vellumory-deep-rest-delay'."
+  (setq vellumory--deep-rest-timer nil)
+  (when vellumory-deep-rest-delay
+    (let ((quiet (- (float-time) vellumory--gc-activity)))
+      (if (< quiet vellumory-deep-rest-delay)
+          (setq vellumory--deep-rest-timer
+                (run-with-timer (- vellumory-deep-rest-delay quiet) nil #'vellumory--deep-rest))
+        (vellumory--tell-worker "rest" '((deep . t)))))))
 
 (defun vellumory--release-tile (tile)
   "Drop the image of TILE and show its blank placeholder instead."

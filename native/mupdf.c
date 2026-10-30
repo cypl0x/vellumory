@@ -622,6 +622,36 @@ lean_obj_res vellumory_native_text(b_lean_obj_arg handle, uint32_t number, lean_
     return lean_io_result_mk_ok(result);
 }
 
+/* Drop what a document keeps to work again quickly: its display lists, the
+   text of recent pages and MuPDF's store (decoded fonts and images). All are
+   made again when needed; a render in flight holds its own references, and
+   text is only used under doc_lock. */
+lean_obj_res vellumory_native_forget_caches(b_lean_obj_arg handle, lean_obj_arg world) {
+    (void)world;
+    v_document *d = lean_get_external_data(handle);
+    fz_context *ctx = acquire(d);
+    if (!ctx) return failure("Cannot clone MuPDF context");
+    fz_display_list *lists[LISTS_MAX];
+    pthread_mutex_lock(&d->state_lock);
+    for (int i = 0; i < LISTS_MAX; ++i) {
+        lists[i] = d->lists[i].list;
+        d->lists[i].list = NULL;
+        d->lists[i].page = -1;
+    }
+    pthread_mutex_unlock(&d->state_lock);
+    for (int i = 0; i < LISTS_MAX; ++i) fz_drop_display_list(ctx, lists[i]);
+    pthread_mutex_lock(&d->doc_lock);
+    for (int i = 0; i < TEXTS_MAX; ++i) {
+        fz_drop_stext_page(ctx, d->texts[i]);
+        d->texts[i] = NULL;
+        d->text_pages[i] = -1;
+    }
+    pthread_mutex_unlock(&d->doc_lock);
+    fz_empty_store(ctx);
+    release(d, ctx);
+    return lean_io_result_mk_ok(lean_box(0));
+}
+
 /* Caller holds doc_lock. */
 static fz_stext_page *cached_text(fz_context *ctx, v_document *d, uint32_t number) {
     for (int i = 0; i < TEXTS_MAX; ++i)

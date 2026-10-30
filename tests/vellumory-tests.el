@@ -2821,3 +2821,37 @@ where to look, instead of Emacs's \"Searching for program\" error."
       (let ((err (should-error (vellumory-mode) :type 'user-error)))
         (should (string-search "worker program" (cadr err)))
         (should (string-search "vellumory-doctor" (cadr err)))))))
+
+(ert-deftest vellumory-deep-rest-waits-for-quiet ()
+  "The worker is told to drop its caches only once nothing has been read for
+`vellumory-deep-rest-delay' seconds; before that the check is put off, and
+nil turns it off.  The request goes to the shared worker, whatever buffer
+is current (the rest timers run in any)."
+  (let ((vellumory-deep-rest-delay 30) (vellumory--deep-rest-timer nil) (sent nil))
+    (cl-letf (((symbol-function 'vellumory--tell-worker) (lambda (method &optional params) (push (cons method params) sent))))
+      (unwind-protect
+          (progn
+            (let ((vellumory--gc-activity (- (float-time) 10)))
+              (vellumory--deep-rest)
+              (should-not sent)
+              (should (timerp vellumory--deep-rest-timer))
+              (should (< 15 (- (float-time (timer--time vellumory--deep-rest-timer)) (float-time)) 25)))
+            (cancel-timer vellumory--deep-rest-timer)
+            (let ((vellumory--gc-activity (- (float-time) 40)))
+              (vellumory--deep-rest)
+              (should (equal sent '(("rest" (deep . t)))))
+              (should-not vellumory--deep-rest-timer))
+            (let ((vellumory-deep-rest-delay nil) (vellumory--gc-activity 0.0))
+              (setq sent nil)
+              (vellumory--deep-rest)
+              (should-not sent)))
+        (when (timerp vellumory--deep-rest-timer) (cancel-timer vellumory--deep-rest-timer)))))
+  ;; Without a document's buffer current, the request still reaches the worker.
+  (let ((vellumory--worker (make-pipe-process :name "vellumory-test-worker" :noquery t))
+        (vellumory--worker-serial 7) (written nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'process-send-string) (lambda (_ string) (setq written string))))
+          (with-temp-buffer (vellumory--tell-worker "rest" '((deep . t))))
+          (should (equal (json-parse-string (string-trim written) :object-type 'alist)
+                         '((id . 8) (method . "rest") (params (deep . t))))))
+      (delete-process vellumory--worker))))

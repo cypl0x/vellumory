@@ -564,6 +564,9 @@ def serve : IO UInt32 := do
         shared.render.push numeric priority { idJson := id, cookie, action := transitionFrame shared params }
       | "rest" =>
         -- Reading rests: what the C library kept of freed memory goes back.
+        -- Deeply, after a longer pause, the documents' caches go first.
+        if (params.getObjValAs? Bool "deep").toOption.getD false then
+          for (_, document) in opened do Native.forgetCaches document.doc
         let trimmed ← Native.trimMemory
         unless id.isNull do
           shared.send <| Json.mkObj [("id", id), ("result", Json.mkObj [("trimmed", toJson trimmed)])]
