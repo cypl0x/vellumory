@@ -1442,7 +1442,32 @@ reader shows it."
                            60))
                   (should (equal (funcall file-hash) hash))
                   (should (eql (alist-get 'head (buffer-local-value 'vellumory--history history)) state))
-                  (should (equal (buffer-local-value 'vellumory--hash reader) hash)))))))
+                  (should (equal (buffer-local-value 'vellumory--hash reader) hash))))
+              ;; v: a past state (page 1 turned) opened read-only; the file
+              ;; stays the current state.
+              (let ((now (funcall file-hash)) (hash (alist-get 'hash (aref nodes 1))) (view nil))
+                (with-selected-window window
+                  (goto-char (text-property-any (point-min) (point-max) 'vellumory-state 1))
+                  (execute-kbd-macro (kbd "v")))
+                (should (vellumory-gui--wait-for
+                         (lambda () (setq view (get-buffer (format "%s@1" (file-name-nondirectory file))))
+                           (and view (equal (buffer-local-value 'vellumory--hash view) hash)))
+                         60))
+                (should (equal (funcall file-hash) now))
+                (vellumory-gui--kill view))
+              ;; d: that state compared with now, its turned page named.
+              (let ((diff (format "*Diff: %s*" (file-name-nondirectory file))))
+                ;; The view took the history's window.
+                (set-window-buffer window history)
+                (with-selected-window window
+                  (goto-char (text-property-any (point-min) (point-max) 'vellumory-state 1))
+                  (execute-kbd-macro (kbd "d")))
+                (should (vellumory-gui--wait-for
+                         (lambda () (and (get-buffer diff)
+                                         (string-search "rotation" (with-current-buffer diff (buffer-string)))))
+                         60))
+                (should (string-search "1 pages changed" (with-current-buffer diff (buffer-string))))
+                (kill-buffer diff)))))
       (when (buffer-live-p history) (kill-buffer history))
       (when (buffer-live-p reader)
         (with-current-buffer reader (set-buffer-modified-p nil))
