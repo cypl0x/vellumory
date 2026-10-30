@@ -717,11 +717,14 @@ leaving returns to the reader at the page last shown."
                 (should-not (eq frame reader-frame))
                 (should (frame-parameter frame 'vellumory-presentation))
                 (should (eq (selected-frame) frame))
-                ;; macOS animates going full screen: measure once the frame's
-                ;; size holds, and the page is fitted to it.
-                (let ((deadline (+ (float-time) 5)) (edges nil))
+                ;; macOS goes full screen late and animated: measure once the
+                ;; frame covers its monitor and holds there, the page fitted to
+                ;; it.  (Without a window manager it never does: 5 s, then on.)
+                (let ((deadline (+ (float-time) 5)) (edges nil)
+                      (monitor (nth 2 (alist-get 'geometry (frame-monitor-attributes frame)))))
                   (while (and (< (float-time) deadline)
-                              (not (equal edges (setq edges (frame-edges frame 'native-edges)))))
+                              (not (and (equal edges (setq edges (frame-edges frame 'native-edges)))
+                                        (>= (- (nth 2 edges) (nth 0 edges)) monitor))))
                     (sit-for 0.3)))
                 (should (shown 0))
                 (should-not (window-parameter window 'mode-line-format))
@@ -894,7 +897,7 @@ is dropped from the image cache once replaced, and the page ends alone."
                           (midway (page check)
                             ;; Ahead: the next page's report, with its /Trans.
                             (should (vellumory-test-gui--wait (lambda () (assq page vellumory-present--info))))
-                            (let ((started (float-time)))
+                            (let ((started (float-time)) (blocked 0.0))
                               (vellumory-present-next)
                               (should (vellumory-test-gui--wait (lambda () vellumory-present--frame)))
                               ;; One canvas refreshed in place where Emacs has them.
@@ -904,20 +907,24 @@ is dropped from the image cache once replaced, and the page ends alone."
                               (pcase-let* ((`(,w ,h ,left ,top) (vellumory-present--fit page))
                                            (edges (window-body-pixel-edges (get-buffer-window presentation t))))
                                 (redisplay t)
-                                (vellumory-gui--with-frame-pixels pixel
-                                  (funcall check (lambda (fx fy)
-                                                   (funcall pixel (+ (nth 0 edges) left (round (* fx (1- w))))
-                                                            (+ (nth 1 edges) top (round (* fy (1- h)))))))))
+                                (let ((capture (float-time)))
+                                  (vellumory-gui--with-frame-pixels pixel
+                                    (funcall check (lambda (fx fy)
+                                                     (funcall pixel (+ (nth 0 edges) left (round (* fx (1- w))))
+                                                              (+ (nth 1 edges) top (round (* fy (1- h))))))))
+                                  (setq blocked (- (float-time) capture))))
                               (should (shown page))
                               (should (>= (- (float-time) started) 0.75))
                               (should-not vellumory-present--animation)
                               (should-not vellumory-present--frame)
-                              (message "%s: %d frames in %.2f s (%s)"
+                              (message "%s: %d frames in %.2f s, %.2f s of it capturing (%s)"
                                        (alist-get 'style (alist-get 'transition (alist-get page vellumory-present--info)))
-                                       vellumory-present--frames (- (float-time) started)
+                                       vellumory-present--frames (- (float-time) started) blocked
                                        (if (image-type-available-p 'canvas) "canvas" "images"))
-                              ;; At least Okular's 20 frames a second.
-                              (should (>= vellumory-present--frames 14)))))
+                              ;; At least Okular's 20 frames a second while the test
+                              ;; let Emacs draw: a capture blocks it (on macOS a tenth
+                              ;; of a second or more), and the transition keeps time.
+                              (should (>= vellumory-present--frames (- 14 (ceiling (* 20 blocked))))))))
                 (should (shown 1))
                 ;; Blue to green: a mix of both, neither pure.
                 (midway 2 (lambda (at)

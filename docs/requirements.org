@@ -387,8 +387,9 @@ passing; a 5019-page book opens; the manual is found beside the worker; on a
 copy of a paper, rotate, compress, undo and rotate back give a history tree
 with a branch, read from its buffer
 ** DONE Memory measured against Evince, Papers and Okular (2026-10-30, three
-runs on one paper): 156–176 MiB with Emacs itself, from 211–218 MiB plus
-38 MiB of strips; Papers 165–166, Okular 191–197, Evince 142–144.  Found by
+runs on one paper, byte-compiled): 149–156 MiB with Emacs itself, from
+211–218 MiB plus 38 MiB of strips; Papers 166, Okular 190–192, Evince
+144–145.  On a 5,019-page book Vellumory 301–318 MiB, Evince 324–325.  Found by
 measuring Emacs and the worker apart, heaptrack and the worker's mappings:
 freed memory kept by the C library (Emacs 528 MiB after 40 pages of ISO
 32000, 158 MiB once given back at rest) and a second buffer for every strip

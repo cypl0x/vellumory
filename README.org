@@ -509,7 +509,8 @@ What pdf-tools still does that Vellumory does not is in the next section.
 - *Vellumory* needs a worker you build yourself today, has been used only
   on Linux (CI also runs its tests, graphical ones included, on macOS), has
   no print command, and is at its first release.  Of the desktop readers,
-  Evince holds 15–25 MiB less memory than Vellumory with Emacs counted.
+  Evince holds 4–12 MiB less memory than Vellumory with Emacs counted, on
+  a short paper; on a 5,019-page book Vellumory holds less.
 
 ** Other and upcoming packages
 :PROPERTIES:
@@ -634,18 +635,18 @@ back, in Emacs and in the worker; both now give it back at rest (after 40
 pages of ISO 32000, Emacs held 528 MiB before, 158 MiB after).  And each
 strip passed through a second buffer in the worker; the renderer now writes
 it to its file directly.  The temporary strips are also capped at 128 MiB
-(512 before).  Measured again on 2026-10-30, three runs, with a second
-sample three seconds after the last step:
+(512 before).  Measured again on 2026-10-30, three runs with byte-compiled
+Lisp, with a second sample three seconds after the last step:
 
 | Viewer    | After the steps | Three seconds later |
 |-----------+-----------------+---------------------|
-| Vellumory | 163–176 MiB     | 156–169 MiB         |
-| Evince    | 142–144 MiB     | 142–144 MiB         |
-| Papers    | 165–166 MiB     | 165–166 MiB         |
-| Okular    | 191–197 MiB     | 138–197 MiB         |
+| Vellumory | 150–156 MiB     | 149–150 MiB         |
+| Evince    | 144–145 MiB     | 144–145 MiB         |
+| Papers    | 166 MiB         | 166 MiB             |
+| Okular    | 190–192 MiB     | 190–192 MiB         |
 
-Vellumory now holds about what Papers does and less than Okular, and still
-15–25 MiB more than Evince.  On a long document the order changes: on a
+Vellumory now holds less than Papers and Okular, and 5–12 MiB more than
+Evince (4–6 at rest).  On a long document the order changes: on a
 5,019-page book (54 MB), two runs each, with byte-compiled Lisp:
 
 | Viewer    | Open, first change | Open, settled | Jump, settled | Down, first change | Memory      |
