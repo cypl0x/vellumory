@@ -358,7 +358,11 @@ when the presentation's generation is no longer GENERATION."
                                                                 left top)
                                   (vellumory-present--drop-frame)
                                   (setq vellumory-present--frame frame))))
-                          ;; No frame (a raster evicted meanwhile): the page cuts in.
+                          ;; No frame (a raster evicted meanwhile): the page cuts
+                          ;; in, and why is said, unless the frame was cancelled.
+                          (let ((error (alist-get 'error reply)))
+                            (unless (or (null error) (equal error "cancelled"))
+                              (message "Vellumory: transition frame: %s" error)))
                           (finish)))))))
       (setq vellumory-present--animation
             (run-at-time
