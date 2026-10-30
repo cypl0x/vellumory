@@ -105,8 +105,9 @@ state a document has been in.
 - Not for text terminals: pages are images, so it needs a graphical Emacs.
 - Not in a package archive yet, and there are no prebuilt binaries yet:
   the worker is built from source, which Nix makes one command.
-- Not yet used on a Mac, and untried on Windows: CI builds it and runs its
-  tests on Apple silicon, but nobody has read a document with it there.
+- Not yet used by a person on a Mac, and untried on Windows: CI builds it
+  on Apple silicon and runs its tests there, the graphical ones in Emacs's
+  Cocoa build.
 
 The full list is under [[#known-limitations][Known limitations]].
 
@@ -656,7 +657,12 @@ source, are in [[file:docs/reader-validation.org][docs/reader-validation.org]].
   step grew by about 8 ms (Vellumory: median 11.8–13.7 ms, worst
   19.9 ms); the order held, but EAF, outside Emacs, then had the lowest
   median.  No screen recording was made under Wayland.
-- Other documents, with heavier pages, behave differently.
+- Other documents, with heavier pages, behave differently.  Very long ones
+  pay for their length when the layout is made again, on opening, zooming
+  or a change of the window's width: on a 5,019-page book (54 MB), byte
+  compiled, 120 ms each time, after a fix of 2026-10-30 (it was 750 ms,
+  walking lists once per page).  Moving through that book (next page,
+  scrolling, jumping, splitting a window) takes about 1 ms.
 - Interpreted Lisp roughly doubles layout and redisplay work; the numbers
   hold for byte-compiled code only.
 
@@ -1159,8 +1165,9 @@ can fix it, offers a button.
   lets an expert change objects.
 - *macOS or Windows?*  The flake also declares Apple silicon Macs
   (=aarch64-darwin=), and CI builds it on macOS 26 and runs its tests there
-  (the Lean suites, the proof audit and the Emacs tests) on every change; but
-  nobody has used the reader on a Mac yet.  Intel
+  on every change: the Lean suites, the proof audit, the Emacs tests, and the
+  graphical tests in Emacs's Cocoa build (all pass but one, which needs a
+  wider screen than the runner has).  No person has used it on a Mac yet.  Intel
   Macs are out: nixpkgs 26.11 dropped them.  Windows is untried.  Reports are
   welcome.
 - *Can I print or sign?*  Neither yet: print the file with your system's
@@ -1182,8 +1189,8 @@ can fix it, offers a button.
 - Needs a graphical Emacs; no text terminal.
 - Tested on Linux x86_64 only, with Emacs 31.1 and 32 (development).
   On Emacs 29 and 30 only the batch tests have run (they pass); on macOS (Apple
-  silicon) CI runs the batch tests, the reader is unused there, and Windows is
-  untried.
+  silicon) CI runs the batch and the graphical tests, no person has used it
+  there yet, and Windows is untried.
 - The worker is built from source; Nix is the only tested way.  No prebuilt
   binaries and no package archive yet.  The straight.el, Elpaca,
   package-vc and Spacemacs recipes are untested.

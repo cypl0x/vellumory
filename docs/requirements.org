@@ -392,13 +392,17 @@ runs on one paper): 156–176 MiB with Emacs itself, from 211–218 MiB plus
 measuring Emacs and the worker apart, heaptrack and the worker's mappings:
 freed memory kept by the C library (Emacs 528 MiB after 40 pages of ISO
 32000, 158 MiB once given back at rest) and a second buffer for every strip
-** TODO macOS: the flake declares Apple silicon (every dependency evaluates
+** DONE macOS: the flake declares Apple silicon (every dependency evaluates
 there), the code avoids calls only Linux has (a sweep without /proc tested
 in a namespace that hides it) and Clang compiles the native code without a
 warning.  Since 2026-10-30 CI on macOS 26 (Apple silicon) builds the
 package and runs the 27 Lean suites, the proof audit and the 89 Emacs tests
-(88 pass, the same one skipped as on Linux).  The reader itself has not been
-used on a Mac yet
+(88 pass, the same one skipped as on Linux), and the GUI suite in Emacs's
+Cocoa build in the runner's desktop session, with a screenshot: 31 pass, one
+needs a reader window wider than the runner's screen allows.  Frame pixels
+come from =screencapture= there (colour-managed: compared within 4 levels; the
+frame re-placed first, as Emacs's stored position goes stale).  No person has
+used it on a Mac yet
 
 * Distinct project name
 Vellumory: exact-name searches returned no results (docs/research.org).

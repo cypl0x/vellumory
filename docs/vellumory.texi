@@ -5775,8 +5775,10 @@ directly.
 
 Nobody has tried yet.  Vellumory is developed and tested on Linux.  The Nix
 flake also declares Apple silicon Macs (@samp{aarch64-darwin})@comma{} and CI builds it on
-macOS 26 and runs its tests there (the Lean suites@comma{} the proof audit and the
-Emacs tests) on every change; but nobody has used the reader on a Mac yet.
+macOS 26 and runs its tests there on every change: the Lean suites@comma{} the proof
+audit@comma{} the Emacs tests@comma{} and the graphical tests in Emacs's Cocoa build (all
+pass but one@comma{} which needs a wider screen than the runner has).  No person has
+used it on a Mac yet.
 Intel Macs are out@comma{} since nixpkgs 26.11 dropped
 them.  Reports from other systems are welcome.
 
