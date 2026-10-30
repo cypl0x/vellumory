@@ -405,6 +405,11 @@ it draws with Cairo (X, pgtk), or captured from the screen on macOS."
   (and (display-graphic-p) (executable-find "magick")
        (or (fboundp 'x-export-frames) (executable-find "screencapture"))))
 
+(defun vellumory-gui--near (a b)
+  "Whether colours A and B, lists of RGB, differ by at most 2 per channel.
+macOS colour-manages a screen capture: pure green comes back (1 255 0)."
+  (cl-every (lambda (x y) (<= (abs (- x y)) 2)) a b))
+
 (defun vellumory-gui--capture-frame (png)
   "Write what redisplay painted in the selected frame to PNG.
 Return how many of its pixels make one frame pixel (2 on a Retina display)."
@@ -413,7 +418,12 @@ Return how many of its pixels make one frame pixel (2 on a Retina display)."
         (write-region (x-export-frames nil 'png) nil png nil 'silent)
         1)
     ;; macOS: its Cocoa build exports no frames; capture the frame's area.
+    ;; Emacs keeps the position it last set (`f->top_pos', nsfns.m), which
+    ;; goes stale when macOS moves the window itself: setting it again makes
+    ;; both agree.
+    (let ((position (frame-position))) (set-frame-position nil (car position) (cdr position)))
     (redisplay t)
+    (sit-for 0.2)
     (pcase-let ((`(,left ,top ,right ,bottom) (frame-edges nil 'native-edges)))
       ;; Where the capture lands is the screen's say, not Emacs's: log both.
       (message "capture: native %S outer %S geometry %S" (frame-edges nil 'native-edges)
@@ -901,8 +911,8 @@ is dropped from the image cache once replaced, and the page ends alone."
                               (dotimes (i 20)
                                 (dotimes (j 15)
                                   (push (funcall at (/ (+ i 0.5) 20) (/ (+ j 0.5) 15)) colours)))
-                              (let ((red (cl-count '(255 0 0) colours :test #'equal))
-                                    (green (cl-count '(0 255 0) colours :test #'equal)))
+                              (let ((red (cl-count '(255 0 0) colours :test #'vellumory-gui--near))
+                                    (green (cl-count '(0 255 0) colours :test #'vellumory-gui--near)))
                                 (unless (= (+ red green) (length colours))
                                   (message "blend colours seen: %S" (seq-take (seq-uniq colours) 12)))
                                 (should (= (+ red green) (length colours)))
