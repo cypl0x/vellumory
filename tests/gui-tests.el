@@ -1399,13 +1399,18 @@ Return PREDICATE's last value."
     (funcall predicate)))
 
 (ert-deftest vellumory-gui-history-tree-restores-every-state ()
-  "The time machine by keys: on an edited copy with a branch in its history,
-\\`c' on each state makes the file that state again, byte for byte (its
-SHA-256 is the state's content address); the tree marks it current and the
-reader shows it."
+  "The time machine by keys, on two documents: on an edited copy with a
+branch in its history, \\`c' on each state makes the file that state again,
+byte for byte (its SHA-256 is the state's content address), the tree marks
+it current and the reader shows it; \\`v' views a state, \\`d' compares it."
+  (dolist (name '("reader.pdf" "long-reader.pdf"))
+    (vellumory-gui--history-round
+     (expand-file-name (concat "target/review/" name) (getenv "VELLUMORY_REVIEW_ROOT")))))
+
+(defun vellumory-gui--history-round (source)
+  "Edit a copy of SOURCE into a branched history and travel it by keys."
   (let* ((dir (make-temp-file "vellumory-history-" t))
          (file (expand-file-name "paper.pdf" dir))
-         (source (with-current-buffer "reader.pdf" vellumory--source-file))
          (reader nil) (history nil)
          (file-hash (lambda () (with-temp-buffer
                                  (set-buffer-multibyte nil)

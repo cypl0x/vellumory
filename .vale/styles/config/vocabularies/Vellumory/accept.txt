@@ -48,6 +48,7 @@
 (?i)exempi
 (?i)extensionless
 (?i)ffmpeg
+(?i)flathub
 (?i)fullscreen
 (?i)gcmh
 (?i)getselection
@@ -67,6 +68,7 @@
 (?i)html
 (?i)imenu
 (?i)isearch
+(?i)journable
 (?i)json
 (?i)kde
 (?i)keyfile
@@ -102,7 +104,9 @@
 (?i)okularrc
 (?i)okularstaterc
 (?i)onwards
+(?i)opam
 (?i)org
+(?i)packagist
 (?i)pagelabels
 (?i)pagelinks
 (?i)pagesize
@@ -146,6 +150,7 @@
 (?i)sed
 (?i)sioyek
 (?i)slurp_file
+(?i)snapcraft
 (?i)soffice
 (?i)spacemacs
 (?i)stdin

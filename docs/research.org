@@ -26,7 +26,12 @@ it; vellumory.com and vellumory.org do not resolve. Rechecked 2026-10-30, the da
 own repository was created: GitHub finds only that repository (cypl0x/vellumory)
 and no code elsewhere using the word; MELPA, GNU ELPA and NonGNU ELPA list no
 such package; PyPI, npm and crates.io answer 404; a web search for the exact word
-finds no page using it; vellumory.com, .org, .net and .dev do not resolve.
+finds no page using it; vellumory.com, .org, .net and .dev do not resolve. Checked further the same day: an
+extended web search for the word as a trademark, company, app or software
+finds none; Docker Hub (no repository, 0 search results), Snapcraft, Hex,
+Hackage, opam and conda-forge answer 404; Maven Central, NuGet and Packagist
+find 0; Flathub's fuzzy search lists 8 apps, none of that name (Writing
+Tools, Journable, Folio and others).
 
 * Rendering pipeline
 ** Measured: where time goes
