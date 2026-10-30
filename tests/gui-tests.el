@@ -415,6 +415,9 @@ Return how many of its pixels make one frame pixel (2 on a Retina display)."
     ;; macOS: its Cocoa build exports no frames; capture the frame's area.
     (redisplay t)
     (pcase-let ((`(,left ,top ,right ,bottom) (frame-edges nil 'native-edges)))
+      ;; Where the capture lands is the screen's say, not Emacs's: log both.
+      (message "capture: native %S outer %S geometry %S" (frame-edges nil 'native-edges)
+               (frame-edges nil 'outer-edges) (frame-geometry))
       (should (zerop (call-process "screencapture" nil nil nil "-x"
                                    (format "-R%d,%d,%d,%d" left top (- right left) (- bottom top))
                                    png)))
@@ -568,9 +571,12 @@ Emacs copies a split window's start, not its vscroll."
 clipped rows; redisplay must keep the exact pixel position anyway."
   (skip-unless (display-graphic-p))
   (with-selected-window (get-buffer-window "reader.pdf" t)
-    (let ((vellumory-strip-height 192))
+    (let ((vellumory-strip-height 192)
+          ;; The mode and header lines' height is the font's: a body of 286
+          ;; pixels on every system, not a window of 330.
+          (chrome (- (window-pixel-height) (window-body-height nil t))))
       (vellumory-fit-width)
-      (let ((other (split-window nil 330 'below t)))
+      (let ((other (split-window nil (+ 286 chrome) 'below t)))
         (unwind-protect
             (let* ((height (window-body-height nil t))
                    (row (aref vellumory--rows 1))
@@ -897,6 +903,8 @@ is dropped from the image cache once replaced, and the page ends alone."
                                   (push (funcall at (/ (+ i 0.5) 20) (/ (+ j 0.5) 15)) colours)))
                               (let ((red (cl-count '(255 0 0) colours :test #'equal))
                                     (green (cl-count '(0 255 0) colours :test #'equal)))
+                                (unless (= (+ red green) (length colours))
+                                  (message "blend colours seen: %S" (seq-take (seq-uniq colours) 12)))
                                 (should (= (+ red green) (length colours)))
                                 (should (and (> red 30) (> green 30)))))))
                 ;; Red to yellow from the left: yellow on the left, red on the right.
@@ -945,6 +953,13 @@ lines and words through MuPDF's characters, and v $ y copies a whole line."
               (vellumory-gui--with-frame-pixels pixel
                 ;; The caret has the cursor's colour (black here, the theme's in Doom):
                 ;; it stands out from the paper, whatever the colour.
+                (unless (< (min (apply #'+ (funcall pixel (1- x) y)) (apply #'+ (funcall pixel x y))) 600)
+                  ;; Where the dark caret is instead, if anywhere near.
+                  (message "caret expected at %d,%d; darkest within 40 px: %S" x y
+                           (car (sort (cl-loop for dx from -40 to 40 nconc
+                                               (cl-loop for dy from -40 to 40
+                                                        collect (list (apply #'+ (funcall pixel (+ x dx) (+ y dy))) dx dy)))
+                                      (lambda (a b) (< (car a) (car b)))))))
                 (should (< (min (apply #'+ (funcall pixel (1- x) y)) (apply #'+ (funcall pixel x y))) 600))
                 (should (equal (funcall pixel (- x 6) y) '(255 255 255)))))
             ;; Words: "Line 1: text" — w stops at 1, at the colon, at text.

@@ -564,6 +564,9 @@ with a gap row between spreads."
                              'display `(space :width (,vellumory-spread-gap) :height (1) :ascent 100)))
          (inhibit-read-only t) (offset 0) (pages (length vellumory--pages))
          (spreads (vellumory--spreads))
+         ;; Both once, not per spread or page: walking the lists each time made
+         ;; a layout quadratic, 1.3 s on a 5,019-page book.
+         (final (car (last spreads))) (count 0)
          (page-rows (make-vector pages 0)) (spread-of (make-vector pages nil))
          rows)
     (setq vellumory--margin (max 0 (/ (- body (vellumory--row-width)) 2)))
@@ -582,13 +585,14 @@ with a gap row between spreads."
              (height (apply #'max (delq nil (copy-sequence heights))))
              (top 0))
         (dolist (page present)
-          (aset page-rows page (length rows))
+          (aset page-rows page count)
           (aset spread-of page present))
         (while (< top height)
           ;; A row also ends where a page does: a shorter image would sit on
           ;; the baseline, at the bottom of its line.
-          (let* ((bottom (apply #'min height (+ top vellumory-strip-height)
-                                (seq-filter (lambda (h) (> h top)) (delq nil (copy-sequence heights)))))
+          (let* ((bottom (let ((bottom (min height (+ top vellumory-strip-height))))
+                           (dolist (h heights bottom)
+                             (when (and h (> h top) (< h bottom)) (setq bottom h)))))
                  (row (vellumory--row-create :page (car present) :top top :bottom bottom
                                              :position (point) :offset offset))
                  (column 0)
@@ -614,11 +618,13 @@ with a gap row between spreads."
             (setf (vellumory--row-tiles row) (vconcat (nreverse tiles)))
             (insert (propertize "\n" 'line-height t))
             (push row rows)
+            (cl-incf count)
             (setq offset (+ offset (- bottom top)) top bottom)))
-        (unless (eq spread (car (last spreads)))
+        (unless (eq spread final)
           (push (vellumory--row-create :page (car (last present)) :top height :bottom height
                                        :position (point) :offset offset :gap t :tiles [])
                 rows)
+          (cl-incf count)
           (insert (propertize " " 'display (vellumory--placeholder (vellumory--row-width) vellumory-page-gap))
                   (propertize "\n" 'line-height t))
           (cl-incf offset vellumory-page-gap))))

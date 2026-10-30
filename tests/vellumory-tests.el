@@ -1245,6 +1245,26 @@ Names, not forms: each Emacs version writes them a little differently."
       (when (get-buffer "*Vellumory batch*") (kill-buffer "*Vellumory batch*"))
       (delete-directory directory t))))
 
+(ert-deftest vellumory-layout-indexes-every-page ()
+  "Each page's first row is where its tiles begin, with and without spreads;
+ gap rows separate spreads and do not end the document.  The layout counts
+rows as it goes (walking the list per page made it quadratic: 1.3 s on a
+5,019-page book)."
+  (with-temp-buffer
+    (setq vellumory--pages (vconcat (cl-loop for i below 301
+                                             collect `((width . 600.0) (height . ,(if (zerop (% i 7)) 900.0 800.0)))))
+          vellumory--zoom 1.0 vellumory--labels [])
+    (dolist (spread '(nil book pairs))
+      (setq vellumory--spread spread)
+      (vellumory--layout-1)
+      (let ((pages-of (lambda (index) (mapcar #'vellumory--tile-page (vellumory--row-tiles (aref vellumory--rows index))))))
+        (dotimes (page (length vellumory--pages))
+          (let ((index (aref vellumory--page-rows page)))
+            (should (memq page (funcall pages-of index)))
+            (should (or (zerop index) (not (memq page (funcall pages-of (1- index))))))))
+        (should-not (vellumory--row-gap (aref vellumory--rows (1- (length vellumory--rows)))))
+        (should (= (cl-count-if #'vellumory--row-gap vellumory--rows) (1- (length (vellumory--spreads)))))))))
+
 (ert-deftest vellumory-spread-layout-and-navigation ()
   (with-temp-buffer
     (setq vellumory--pages (vector '((width . 600.0) (height . 800.0)) '((width . 600.0) (height . 800.0))
