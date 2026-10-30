@@ -426,9 +426,11 @@ Return how many of its pixels make one frame pixel (2 on a Retina display)."
     ;; macOS: its Cocoa build exports no frames; capture the frame's area.
     ;; Emacs keeps the position it last set (`f->top_pos', nsfns.m), which
     ;; goes stale when macOS moves the window itself: setting it again makes
-    ;; both agree.  Once per frame, never mid-animation again, and not in
-    ;; full screen, where macOS places the window.
-    (unless (or (frame-parameter nil 'vellumory-gui-placed) (frame-parameter nil 'fullscreen))
+    ;; both agree.  Once per frame, and only for a window with a title bar:
+    ;; a presentation's, full screen and undecorated, macOS places itself,
+    ;; and moving it mid-transition stole its frames.
+    (when (and (not (frame-parameter nil 'vellumory-gui-placed))
+               (> (or (cdr (alist-get 'title-bar-size (frame-geometry))) 0) 0))
       (let ((position (frame-position))) (set-frame-position nil (car position) (cdr position)))
       (set-frame-parameter nil 'vellumory-gui-placed t)
       (sit-for 0.2))
