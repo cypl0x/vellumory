@@ -266,13 +266,14 @@ pages on, previewed over the page./
   lines, copy with =y=.
 - *Annotations* on selected text: highlight (=a h=), underline (=a u=),
   strike out (=a s=), squiggly underline (=a q=); notes at a click
-  (=a n=); a list where you edit their text or delete them (=a l=).  Drag a
-  note to move it; right-click any annotation to change its text, colour or
-  opacity, move it or delete it.  A moved annotation keeps the appearance
-  its program drew.
-  Without a comment, the marked text becomes the annotation's contents, so
-  it reads well to screen readers.  PDF/A-1 documents are offered an
-  underline instead of a highlight, which would need transparency.
+  (=a n=); text written on the page at a click (=a t=), its font embedded
+  so PDF/A stays PDF/A; a list where you edit their text or delete them
+  (=a l=).  Drag a note to move it; right-click any annotation to change its
+  text, colour or opacity, move it or delete it.  A moved annotation keeps
+  the appearance its program drew.  Without a comment, the marked text
+  becomes the annotation's contents, so it reads well to screen readers.
+  PDF/A-1 documents are offered an underline instead of a highlight, which
+  would need transparency.
 - *Forms* (=e f=, or a click on a field): text fields, checkboxes and
   choices; the document's JavaScript never runs.
 
@@ -510,8 +511,7 @@ What pdf-tools still does that Vellumory does not is in the next section.
 - *EAF's PDF viewer* draws in Qt, outside Emacs' display engine.  Where the
   pgtk build of Emacs ran on X11 and added about 8 ms to every Emacs
   viewer's step, EAF's median step (9.0–10.0 ms) was lower than
-  Vellumory's (11.8–13.7 ms).  Its annotations include inline text, which
-  Vellumory cannot add.
+  Vellumory's (11.8–13.7 ms).
 - *doc-tools* renders every page when a file opens, so its scrolling is
   smooth too: worst step 7.0–9.5 ms against Vellumory's 6.1–6.6 ms.
 - *Vellumory* needs a worker you build yourself today, has been used only
@@ -1228,8 +1228,8 @@ can fix it, offers a button.
   binaries and no package archive yet.  The straight.el, Elpaca,
   package-vc and Spacemacs recipes are untested.
 - No signing.
-- Annotations: highlight, underline, strike-out, squiggly and text notes
-  only; no free-hand drawing, shapes or inline text; they can be moved but
+- Annotations: highlight, underline, strike-out, squiggly, notes and text
+  on the page only; no free-hand drawing or shapes; they can be moved but
   not resized.
 - No JavaScript (by design) and no dynamic XFA forms (MuPDF does not render
   them).

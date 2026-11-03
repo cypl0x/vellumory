@@ -21,9 +21,10 @@
 ;;; Commentary:
 ;; Annotations are recorded, undoable edits like every other change.  Mark
 ;; the selected text (`a h' highlight, `a u' underline, `a s' strike out,
-;; `a q' squiggly underline), or click to place a note (`a n').  The marked
-;; text becomes the annotation's contents unless a comment is given (with a
-;; prefix argument), so the annotation reads well to screen readers too.
+;; `a q' squiggly underline), click to place a note (`a n'), or write text
+;; on the page where you click (`a t').  The marked text becomes the
+;; annotation's contents unless a comment is given (with a prefix argument),
+;; so the annotation reads well to screen readers too.
 ;; `a l' lists every annotation: RET shows it, `e' edits its text, `c' and
 ;; `o' change its colour and opacity, `d' deletes it.  Hovering an annotation
 ;; on the page shows its text; dragging a note moves it, and the right-click
@@ -64,8 +65,13 @@
 
 (defcustom vellumory-annotation-colors
   '((Highlight 1.0 0.85 0.2) (Underline 0.1 0.45 0.9) (StrikeOut 0.85 0.15 0.15)
-    (Squiggly 0.2 0.65 0.3) (Text 1.0 0.85 0.2))
-  "RGB colours, 0 to 1, of each kind of annotation." :type '(alist :key-type symbol))
+    (Squiggly 0.2 0.65 0.3) (Text 1.0 0.85 0.2) (FreeText 0.0 0.0 0.0))
+  "RGB colours, 0 to 1, of each kind of annotation; of the text for FreeText."
+  :type '(alist :key-type symbol))
+
+(defcustom vellumory-annotation-text-size 12
+  "Points of the text written on pages (`vellumory-add-text'), 4 to 144."
+  :type 'number)
 
 ;;;; Creating
 
@@ -76,6 +82,7 @@ FIELDS is a plist of the optional :quads, :rect and :contents."
     (quads . ,(or (plist-get fields :quads) [])) (rect . ,(or (plist-get fields :rect) []))
     (color . ,(vconcat (alist-get (intern kind) vellumory-annotation-colors)))
     (contents . ,(or (plist-get fields :contents) "")) (author . ,vellumory-annotation-author)
+    ,@(and (equal kind "FreeText") `((size . ,vellumory-annotation-text-size)))
     ;; Recorded, so replaying the edit dates the annotation identically.
     (time . ,(floor (float-time)))))
 
@@ -120,19 +127,34 @@ With a prefix argument, ask for a COMMENT."
   (interactive (list (vellumory--comment current-prefix-arg)))
   (vellumory--annotate-selection "Squiggly" comment))
 
+(defun vellumory--read-click (prompt)
+  "The place, (PAGE X Y), of the next click in this window, asked with PROMPT."
+  (let ((window (selected-window)) location)
+    (while (not location)
+      (let ((event (read-event prompt)))
+        (when (and (memq (car-safe event) '(mouse-1 down-mouse-1))
+                   (eq window (posn-window (event-start event))))
+          (setq location (vellumory--event-location (event-start event))))))
+    location))
+
 ;;;###autoload
 (defun vellumory-add-note (location contents)
   "Put a note with CONTENTS at LOCATION, (PAGE X Y), chosen by a click."
-  (interactive
-   (let ((window (selected-window)) location)
-     (while (not location)
-       (let ((event (read-event "Click where the note goes")))
-         (when (and (memq (car-safe event) '(mouse-1 down-mouse-1))
-                    (eq window (posn-window (event-start event))))
-           (setq location (vellumory--event-location (event-start event))))))
-     (list location (read-string "Note: "))))
+  (interactive (list (vellumory--read-click "Click where the note goes") (read-string "Note: ")))
   (pcase-let ((`(,page ,x ,y) location))
     (vellumory--edit (vellumory--annotation-operation "Text" page :contents contents :rect (vector x y x y)))))
+
+;;;###autoload
+(defun vellumory-add-text (location contents)
+  "Write CONTENTS on the page at LOCATION, (PAGE X Y), chosen by a click.
+The text starts there, `vellumory-annotation-text-size' points large and
+in the colour of FreeText in `vellumory-annotation-colors'.  A line break
+typed with \\[quoted-insert] in the prompt starts a new line.  Its font is
+embedded, so PDF/A documents stay PDF/A."
+  (interactive (list (vellumory--read-click "Click where the text goes") (read-string "Text: ")))
+  (when (string-blank-p contents) (user-error "No text to write"))
+  (pcase-let ((`(,page ,x ,y) location))
+    (vellumory--edit (vellumory--annotation-operation "FreeText" page :contents contents :rect (vector x y x y)))))
 
 ;;;; Reading: hover text on pages
 
@@ -425,6 +447,7 @@ The list is read again once the edit has had time to land."
     (keymap-set map "s" #'vellumory-strike-out)
     (keymap-set map "q" #'vellumory-squiggly)
     (keymap-set map "n" #'vellumory-add-note)
+    (keymap-set map "t" #'vellumory-add-text)
     (keymap-set map "l" #'vellumory-annotations)
     map)
   "Annotation commands, under `a' in readers.")

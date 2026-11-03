@@ -2428,7 +2428,16 @@ lean_obj_res vellumory_native_annotations(b_lean_obj_arg handle, uint32_t number
                 pdf_obj *color = pdf_dict_get(ctx, obj, PDF_NAME(C));
                 jb_key(ctx, &b, "color");
                 jb_open(ctx, &b, '[');
-                for (int i = 0; i < pdf_array_len(ctx, color) && i < 4; ++i) jb_num(ctx, &b, pdf_array_get_real(ctx, color, i));
+                if (type == PDF_ANNOT_FREE_TEXT) {
+                    /* Free text's colour is its text's. */
+                    const char *font;
+                    float size, rgb[4];
+                    int n;
+                    pdf_annot_default_appearance(ctx, a, &font, &size, &n, rgb);
+                    for (int i = 0; i < n && i < 4; ++i) jb_num(ctx, &b, rgb[i]);
+                } else
+                    for (int i = 0; i < pdf_array_len(ctx, color) && i < 4; ++i)
+                        jb_num(ctx, &b, pdf_array_get_real(ctx, color, i));
                 jb_close(ctx, &b, ']');
                 jb_key(ctx, &b, "opacity");
                 jb_num(ctx, &b, pdf_annot_opacity(ctx, a));
@@ -2480,9 +2489,95 @@ static pdf_annot *annot_find(fz_context *ctx, pdf_page *page, int object) {
     fz_throw(ctx, FZ_ERROR_ARGUMENT, "No annotation %d on this page", object);
 }
 
+/* The standard fonts an appearance names without their program (as MuPDF
+   draws free text: Helvetica, never embedded) embedded instead, in RESOURCES
+   and the forms they draw: PDF/A requires every font's program (ISO 19005-1
+   6.3.4). The program is MuPDF's own, copied so MuPDF does not take it for
+   the built-in one, and added in a scratch document, since DOC's font cache
+   would hand back the bare font; the result is grafted into DOC. Only the
+   Latin (WinAnsi) encoding MuPDF uses for such text is handled. */
+static void embed_standard_fonts(fz_context *ctx, pdf_document *doc, pdf_obj *resources, int depth) {
+    if (!resources || depth > 4) return;
+    pdf_obj *fonts = pdf_dict_get(ctx, resources, PDF_NAME(Font));
+    for (int i = 0; i < pdf_dict_len(ctx, fonts); ++i) {
+        pdf_obj *font = pdf_dict_get_val(ctx, fonts, i);
+        if (!pdf_name_eq(ctx, pdf_dict_get(ctx, font, PDF_NAME(Subtype)), PDF_NAME(Type1))) continue;
+        if (pdf_dict_get(ctx, font, PDF_NAME(FontDescriptor))) continue;
+        if (!pdf_name_eq(ctx, pdf_dict_get(ctx, font, PDF_NAME(Encoding)), PDF_NAME(WinAnsiEncoding))) continue;
+        const char *name = pdf_to_name(ctx, pdf_dict_get(ctx, font, PDF_NAME(BaseFont)));
+        int size = 0;
+        const unsigned char *data = fz_lookup_base14_font(ctx, name, &size);
+        if (!data) continue;
+        pdf_document *scratch = NULL;
+        fz_buffer *copy = NULL;
+        fz_font *program = NULL;
+        pdf_obj *embedded = NULL;
+        fz_var(scratch); fz_var(copy); fz_var(program); fz_var(embedded);
+        fz_try(ctx) {
+            copy = fz_new_buffer_from_copied_data(ctx, data, (size_t)size);
+            program = fz_new_font_from_buffer(ctx, name, copy, 0, 0);
+            scratch = pdf_create_document(ctx);
+            embedded = pdf_add_simple_font(ctx, scratch, program, PDF_SIMPLE_ENCODING_LATIN);
+            pdf_obj *grafted = pdf_graft_object(ctx, doc, embedded);
+            pdf_dict_put_drop(ctx, fonts, pdf_dict_get_key(ctx, fonts, i), grafted);
+            /* MuPDF calls every bare CFF program CID-keyed; a simple font's is
+               Type1C (ISO 32000-2 9.9), and its descriptor names the font as
+               the font does. */
+            pdf_obj *descriptor = pdf_dict_get(ctx, grafted, PDF_NAME(FontDescriptor));
+            pdf_obj *file = pdf_dict_get(ctx, descriptor, PDF_NAME(FontFile3));
+            if (pdf_name_eq(ctx, pdf_dict_get(ctx, file, PDF_NAME(Subtype)), PDF_NAME(CIDFontType0C)))
+                pdf_dict_put(ctx, file, PDF_NAME(Subtype), PDF_NAME(Type1C));
+            pdf_dict_put(ctx, descriptor, PDF_NAME(FontName), pdf_dict_get(ctx, grafted, PDF_NAME(BaseFont)));
+        }
+        fz_always(ctx) {
+            pdf_drop_obj(ctx, embedded);
+            pdf_drop_document(ctx, scratch);
+            fz_drop_font(ctx, program);
+            fz_drop_buffer(ctx, copy);
+        }
+        fz_catch(ctx) fz_rethrow(ctx);
+    }
+    pdf_obj *forms = pdf_dict_get(ctx, resources, PDF_NAME(XObject));
+    for (int i = 0; i < pdf_dict_len(ctx, forms); ++i)
+        embed_standard_fonts(ctx, doc, pdf_dict_get(ctx, pdf_dict_get_val(ctx, forms, i), PDF_NAME(Resources)), depth + 1);
+}
+
+/* The fonts of every appearance of ANNOT, normal, rollover and down, and of
+   each of their states, embedded (see embed_standard_fonts). */
+static void embed_appearance_fonts(fz_context *ctx, pdf_document *doc, pdf_annot *annot) {
+    pdf_obj *ap = pdf_dict_get(ctx, pdf_annot_obj(ctx, annot), PDF_NAME(AP));
+    for (int i = 0; i < pdf_dict_len(ctx, ap); ++i) {
+        pdf_obj *kind = pdf_dict_get_val(ctx, ap, i);
+        if (pdf_is_stream(ctx, kind)) embed_standard_fonts(ctx, doc, pdf_dict_get(ctx, kind, PDF_NAME(Resources)), 0);
+        else
+            for (int j = 0; j < pdf_dict_len(ctx, kind); ++j)
+                embed_standard_fonts(ctx, doc, pdf_dict_get(ctx, pdf_dict_get_val(ctx, kind, j), PDF_NAME(Resources)), 0);
+    }
+}
+
+/* The size of TEXT set in Helvetica of SIZE points, as MuPDF lays free text
+   out (lines 1.2 sizes apart), with room to spare so it never wraps. */
+static fz_rect free_text_box(fz_context *ctx, const char *text, float size) {
+    fz_font *font = fz_new_base14_font(ctx, "Helvetica");
+    float width = 0, line = 0;
+    int lines = 1;
+    fz_try(ctx) {
+        for (const char *p = text; *p;) {
+            int rune;
+            p += fz_chartorune(&rune, p);
+            if (rune == '\n') { ++lines; line = 0; continue; }
+            line += fz_advance_glyph(ctx, font, fz_encode_character(ctx, font, rune), 0) * size;
+            if (line > width) width = line;
+        }
+    }
+    fz_always(ctx) fz_drop_font(ctx, font);
+    fz_catch(ctx) fz_rethrow(ctx);
+    return fz_make_rect(0, 0, width + size * 0.5f, lines * size * 1.2f + size * 0.3f);
+}
+
 lean_obj_res vellumory_native_annot_add(b_lean_obj_arg input, b_lean_obj_arg output, uint32_t number,
         b_lean_obj_arg kind, b_lean_obj_arg quads, b_lean_obj_arg rect, b_lean_obj_arg color,
-        b_lean_obj_arg contents, b_lean_obj_arg author, double time, lean_obj_arg world) {
+        b_lean_obj_arg contents, b_lean_obj_arg author, double time, double size, lean_obj_arg world) {
     (void)world;
     fz_context *ctx = fz_new_context(NULL, NULL, FZ_STORE_DEFAULT);
     if (!ctx) return failure("Cannot create MuPDF context");
@@ -2511,9 +2606,23 @@ lean_obj_res vellumory_native_annot_add(b_lean_obj_arg input, b_lean_obj_arg out
         }
         if (lean_sarray_size(rect) == 4) {
             const double *r = lean_float_array_cptr(rect);
-            pdf_set_annot_rect(ctx, annot, fz_make_rect(r[0] + box.x0, r[1] + box.y0, r[2] + box.x0, r[3] + box.y0));
+            fz_rect at = fz_make_rect(r[0] + box.x0, r[1] + box.y0, r[2] + box.x0, r[3] + box.y0);
+            /* Free text: from the click, as large as its text. */
+            if (type == PDF_ANNOT_FREE_TEXT) {
+                fz_rect extent = free_text_box(ctx, lean_string_cstr(contents), (float)size);
+                at.x1 = at.x0 + extent.x1;
+                at.y1 = at.y0 + extent.y1;
+            }
+            pdf_set_annot_rect(ctx, annot, at);
         }
-        if (lean_sarray_size(color) == 3) {
+        if (type == PDF_ANNOT_FREE_TEXT) {
+            /* Text written on the page: its colour is the text's, and no box. */
+            const double *c = lean_float_array_cptr(color);
+            float rgb[3] = {0, 0, 0};
+            if (lean_sarray_size(color) == 3) rgb[0] = (float)c[0], rgb[1] = (float)c[1], rgb[2] = (float)c[2];
+            pdf_set_annot_default_appearance(ctx, annot, "Helv", (float)size, 3, rgb);
+            pdf_set_annot_border_width(ctx, annot, 0);
+        } else if (lean_sarray_size(color) == 3) {
             const double *c = lean_float_array_cptr(color);
             float rgb[3] = {(float)c[0], (float)c[1], (float)c[2]};
             pdf_set_annot_color(ctx, annot, 3, rgb);
@@ -2525,6 +2634,7 @@ lean_obj_res vellumory_native_annot_add(b_lean_obj_arg input, b_lean_obj_arg out
         pdf_set_annot_creation_date(ctx, annot, (int64_t)time);
         pdf_set_annot_modification_date(ctx, annot, (int64_t)time);
         pdf_update_annot(ctx, annot);
+        embed_appearance_fonts(ctx, doc, annot);
         /* A note's popup is an annotation too: PDF/A wants it printable (ISO
            19005-1 6.5.3; veraPDF failed it otherwise). */
         pdf_obj *popup = pdf_dict_get(ctx, pdf_annot_obj(ctx, annot), PDF_NAME(Popup));
@@ -2560,8 +2670,21 @@ lean_obj_res vellumory_native_annot_change(b_lean_obj_arg input, b_lean_obj_arg 
         if (remove) pdf_delete_annot(ctx, page, annot);
         else {
             pdf_set_annot_contents(ctx, annot, lean_string_cstr(contents));
+            /* Free text grows or shrinks with its text, from the same corner. */
+            if (pdf_annot_type(ctx, annot) == PDF_ANNOT_FREE_TEXT) {
+                const char *font;
+                float size, color[4];
+                int n;
+                pdf_annot_default_appearance(ctx, annot, &font, &size, &n, color);
+                fz_rect at = pdf_annot_rect(ctx, annot);
+                fz_rect extent = free_text_box(ctx, lean_string_cstr(contents), size);
+                at.x1 = at.x0 + extent.x1;
+                at.y1 = at.y0 + extent.y1;
+                pdf_set_annot_rect(ctx, annot, at);
+            }
             pdf_set_annot_modification_date(ctx, annot, (int64_t)time);
             pdf_update_annot(ctx, annot);
+            embed_appearance_fonts(ctx, doc, annot);
         }
         annot_save(ctx, doc, lean_string_cstr(output));
     }
@@ -2623,11 +2746,19 @@ lean_obj_res vellumory_native_annot_modify(b_lean_obj_arg input, b_lean_obj_arg 
             if (lean_sarray_size(color) == 3) {
                 const double *c = lean_float_array_cptr(color);
                 float rgb[3] = {(float)c[0], (float)c[1], (float)c[2]};
-                pdf_set_annot_color(ctx, annot, 3, rgb);
+                /* Free text's colour is its text's, in its default appearance. */
+                if (pdf_annot_type(ctx, annot) == PDF_ANNOT_FREE_TEXT) {
+                    const char *font;
+                    float size, old[4];
+                    int n;
+                    pdf_annot_default_appearance(ctx, annot, &font, &size, &n, old);
+                    pdf_set_annot_default_appearance(ctx, annot, font, size, 3, rgb);
+                } else pdf_set_annot_color(ctx, annot, 3, rgb);
             }
             if (opacity >= 0) pdf_set_annot_opacity(ctx, annot, (float)opacity);
             pdf_set_annot_modification_date(ctx, annot, (int64_t)time);
             pdf_update_annot(ctx, annot);
+            embed_appearance_fonts(ctx, doc, annot);
         }
         annot_save(ctx, doc, lean_string_cstr(output));
     }

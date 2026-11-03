@@ -58,6 +58,7 @@
 (declare-function vellumory-outline "vellumory-navigation" ())
 (declare-function vellumory-thumbnails "vellumory-thumbnails" ())
 (declare-function vellumory-add-note "vellumory-annotate" (location contents))
+(declare-function vellumory-add-text "vellumory-annotate" (location contents))
 (declare-function vellumory-highlight "vellumory-annotate" (&optional comment))
 (declare-function vellumory-underline "vellumory-annotate" (&optional comment))
 (declare-function vellumory-strike-out "vellumory-annotate" (&optional comment))
@@ -247,7 +248,14 @@
         (vellumory-context--item menu (format "Search for “%s”" (truncate-string-to-width text 30 nil nil "…"))
                                  (lambda () (interactive) (vellumory--search-begin text nil nil))))
       (vellumory-context--separator menu))
-    (when location (vellumory-context--page-items menu (current-buffer) (car location)))
+    (when location
+      ;; Where the click landed: no second click to choose the place.
+      (vellumory-context--item menu "Write text here…"
+                               (lambda () (interactive) (vellumory-add-text location (read-string "Text: "))))
+      (vellumory-context--item menu "Add a note here…"
+                               (lambda () (interactive) (vellumory-add-note location (read-string "Note: "))))
+      (vellumory-context--separator menu)
+      (vellumory-context--page-items menu (current-buffer) (car location)))
     (vellumory-context--common menu)))
 
 (defun vellumory-context--thumbnails (menu click)

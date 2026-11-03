@@ -64,6 +64,7 @@
 (?i)gvfs
 (?i)hackage
 (?i)heaptrack
+(?i)helvetica
 (?i)hetzner
 (?i)html
 (?i)imenu

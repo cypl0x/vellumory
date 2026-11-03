@@ -53,9 +53,10 @@ inductive Operation where
       none, MODIFY all, annotate, form, assembly or none. -/
   | encrypt (user owner : String) (print modify : String) (extract : Bool)
   /-- A KIND annotation (Highlight, Underline, StrikeOut, Squiggly on QUADS, 8 numbers
-      each; Text at RECT) on one-based PAGE, dated TIME (seconds since 1970). -/
+      each; Text at RECT; FreeText from RECT's corner, its text SIZE points) on
+      one-based PAGE, dated TIME (seconds since 1970). -/
   | annotate (page : Nat) (kind : String) (quads rect color : Array Float) (contents author : String)
-      (time : Float)
+      (time : Float) (size : Float := 12)
   | annotationEdit (page object : Nat) (contents : String) (time : Float)
   | annotationDelete (page object : Nat)
   /-- A new COLOR (3 numbers from 0 to 1, or none to keep) and OPACITY (from 0
@@ -89,7 +90,8 @@ def Operation.label : Operation → String
     s!"{if under then "underlay" else "stamp"} {(FilePath.mk file).fileName.getD file} on pages {pages}"
   | .encrypt user _ print modify extract =>
     s!"encrypt (AES-256{if user.isEmpty then "" else ", password to open"}; print {print}, modify {modify}{if extract then "" else ", no copying"})"
-  | .annotate page kind .. => s!"{if kind == "Text" then "note" else kind.toLower} on page {page}"
+  | .annotate page kind .. =>
+    s!"{if kind == "Text" then "note" else if kind == "FreeText" then "text" else kind.toLower} on page {page}"
   | .annotationEdit page .. => s!"edit annotation on page {page}"
   | .annotationDelete page _ => s!"delete annotation on page {page}"
   | .annotationStyle page _ color opacity _ =>
@@ -120,10 +122,10 @@ def Operation.toJson : Operation → Json
   -- Neither password is ever recorded.
   | .encrypt _ _ print modify extract => .mkObj [("op", .str "encrypt"), ("print", .str print),
       ("modify", .str modify), ("extract", .bool extract)]
-  | .annotate page kind quads rect color contents author time => .mkObj [("op", .str "annotate"),
+  | .annotate page kind quads rect color contents author time size => .mkObj [("op", .str "annotate"),
       ("page", Vellumory.toJson page), ("kind", .str kind), ("quads", .arr (quads.map .num)),
       ("rect", .arr (rect.map .num)), ("color", .arr (color.map .num)), ("contents", .str contents),
-      ("author", .str author), ("time", .num time)]
+      ("author", .str author), ("time", .num time), ("size", .num size)]
   | .annotationEdit page object contents time => .mkObj [("op", .str "annotation-edit"),
       ("page", Vellumory.toJson page), ("object", Vellumory.toJson object), ("contents", .str contents),
       ("time", .num time)]
@@ -173,6 +175,7 @@ def Operation.fromJson (j : Json) : Except String Operation := do
     return .annotate (← j.getObjValAs? Nat "page") (← j.getObjValAs? String "kind") (numbers "quads")
       (numbers "rect") (numbers "color") ((j.getObjValAs? String "contents").toOption.getD "")
       ((j.getObjValAs? String "author").toOption.getD "") ((j.getObjValAs? Float "time").toOption.getD 0)
+      ((j.getObjValAs? Float "size").toOption.getD 12)
   | "annotation-edit" =>
     return .annotationEdit (← j.getObjValAs? Nat "page") (← j.getObjValAs? Nat "object")
       ((j.getObjValAs? String "contents").toOption.getD "") ((j.getObjValAs? Float "time").toOption.getD 0)
@@ -224,12 +227,16 @@ def Operation.validate (count : Nat) : Operation → Except String Unit
     if file.isEmpty then throw "no stamp document"
     unless !pages.isEmpty && pages.toList.all (fun c => c.isDigit || ",-zr".toList.contains c) do
       throw "pages are a qpdf page range such as 1-z, 1,3,5 or 2-r1"
-  | .annotate page kind quads rect color _ _ _ => do
+  | .annotate page kind quads rect color contents _ _ size => do
     unless 1 ≤ page && page ≤ count do throw s!"page must be within 1–{count}"
-    unless ["Highlight", "Underline", "StrikeOut", "Squiggly", "Text"].contains kind do
-      throw "annotations are Highlight, Underline, StrikeOut, Squiggly or Text"
+    unless ["Highlight", "Underline", "StrikeOut", "Squiggly", "Text", "FreeText"].contains kind do
+      throw "annotations are Highlight, Underline, StrikeOut, Squiggly, Text or FreeText"
     if kind == "Text" then
       unless rect.size == 4 do throw "a note needs its rectangle"
+    else if kind == "FreeText" then
+      unless rect.size == 4 do throw "text needs its place"
+      if contents.all Char.isWhitespace then throw "text needs some text"
+      unless 4 ≤ size && size ≤ 144 do throw "text is 4 to 144 points"
     else
       unless !quads.isEmpty && quads.size % 8 == 0 do throw "markup needs quadrilaterals of 8 numbers each"
     unless color.isEmpty || (color.size == 3 && color.all (fun c => 0 ≤ c && c ≤ 1)) do
@@ -388,14 +395,14 @@ def Operation.steps (op : Operation) (input output scratch : String) (pdfa : Opt
       .tool Tools.qpdf (op.qpdfArgs input output pdfa)]
   | .decrypt password =>
     #[.native (IO.FS.writeFile s!"{output}.password" (password ++ "\n")), .tool Tools.qpdf (op.qpdfArgs input output pdfa)]
-  | .annotate page kind quads rect color contents author time =>
+  | .annotate page kind quads rect color contents author time size =>
     -- A highlight's appearance multiplies its colour with the page: transparency,
     -- which PDF/A-1 forbids (ISO 19005-1 6.4; veraPDF failed it).
     if pdfa == some 1 && kind == "Highlight" then
       #[.native (throw <| IO.userError "PDF/A-1 forbids the transparency highlights need; underline instead")]
     else
     #[.native (discard <| Native.annotAdd input s!"{output}.annotated" (page - 1).toUInt32 kind ⟨quads⟩ ⟨rect⟩ ⟨color⟩
-        contents author time),
+        contents author time size),
       .tool Tools.qpdf (op.qpdfArgs input output pdfa)]
   | .annotationEdit page object contents time =>
     #[.native (Native.annotChange input s!"{output}.annotated" (page - 1).toUInt32 object.toUInt32 false contents time),

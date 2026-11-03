@@ -339,11 +339,12 @@ opaque annotations (doc : @& Document) (page : UInt32) : IO String
 
 /-- Add an annotation of KIND (a PDF subtype such as Highlight or Text) to
     zero-based PAGE of INPUT, writing OUTPUT; QUADS are 8 numbers per quad, RECT
-    4 or none, COLOR 3 or none; TIME, seconds since 1970, dates it. Returns its
-    object number. -/
+    4 or none, COLOR 3 or none; TIME, seconds since 1970, dates it. FreeText
+    starts at RECT's corner and is as large as its text of SIZE points, its
+    font embedded. Returns its object number. -/
 @[extern "vellumory_native_annot_add"]
 opaque annotAdd (input output : @& String) (page : UInt32) (kind : @& String) (quads rect color : @& FloatArray)
-  (contents author : @& String) (time : Float) : IO UInt32
+  (contents author : @& String) (time : Float) (size : Float := 12) : IO UInt32
 
 /-- Set the contents of annotation OBJECT on zero-based PAGE, or REMOVE it. -/
 @[extern "vellumory_native_annot_change"]

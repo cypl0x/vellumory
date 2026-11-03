@@ -634,6 +634,69 @@ def testSignatures : IO Unit := do
     ensure (field restored[0]! "intact" == some true) "and the signature is intact again"
   IO.println "PASS signatures: integrity, trust and its reason, signer; broken by edits, restored by undo"
 
+/-- Text written on the page (FreeText): as large as its text, in its colour,
+    its font embedded, so PDF/A documents stay PDF/A, also once changed. -/
+def testFreeText : IO Unit := do
+  withScratchDir fun dir => do
+    let listOf := fun (file : System.FilePath) (page : Nat) => do
+      let doc ← Native.openDocument (← IO.FS.readBinFile file) ""
+      match ← IO.ofExcept (Json.parse (← Native.annotations doc page.toUInt32)) with
+      | .arr a => return a
+      | _ => return #[]
+    let numbers := fun (j : Json) (key : String) => (j.getObjValAs? (Array Float) key).toOption.getD #[]
+    let text : Edit.Operation := .annotate 1 "FreeText" #[] #[100, 300, 100, 300] #[0.8, 0.1, 0.1] "Inline remark"
+      "Reader" 1793166790 14
+    let doc := dir / "doc.pdf"
+    IO.FS.writeFile doc Fixtures.reader
+    let store : Edit.Store := { root := dir / "store" }
+    let _ ← Edit.apply store doc text
+    let found := (← listOf doc 0).find? fun a => (a.getObjValAs? String "type").toOption == some "FreeText"
+    let some free := found | throw <| IO.userError "no FreeText annotation"
+    let rect := numbers free "rect"
+    ensure ((rect[0]! - 100).abs < 0.5 && (rect[1]! - 300).abs < 0.5 && rect[2]! - rect[0]! > 60 &&
+      rect[3]! - rect[1]! > 14 && rect[3]! - rect[1]! < 30) s!"sized to its text: {rect}"
+    ensure ((free.getObjValAs? String "contents").toOption == some "Inline remark" &&
+      (numbers free "color").size == 3 && (numbers free "color")[0]! > 0.7) s!"text and colour: {free.compress}"
+    -- Drawn in its colour inside its box.
+    let image := ppmPixels (← Native.render (← Native.openDocument (← IO.FS.readBinFile doc) "") 0 612 0 792)
+    let red := (List.range ((rect[2]! - rect[0]!).toUInt64.toNat)).any fun dx =>
+      (List.range ((rect[3]! - rect[1]!).toUInt64.toNat)).any fun dy =>
+        let i := 3 * ((300 + dy) * 612 + 100 + dx)
+        image[i]!.toNat > 150 && image[i + 1]!.toNat < 90 && image[i + 2]!.toNat < 90
+    ensure red "the text is drawn in red inside its box"
+    -- Longer text, a wider box from the same corner.
+    let object := (free.getObjValAs? Nat "object").toOption.getD 0
+    let _ ← Edit.apply store doc (.annotationEdit 1 object "Inline remark, now somewhat longer" 1793170000)
+    let wider := numbers ((← listOf doc 0).find? fun a => (a.getObjValAs? Nat "object").toOption == some object).get!
+      "rect"
+    ensure ((wider[0]! - rect[0]!).abs < 0.5 && wider[2]! - wider[0]! > rect[2]! - rect[0]! + 40)
+      s!"grown with its text: {rect} → {wider}"
+    let rejected := fun (op : Edit.Operation) => match op.validate 3 with | .error _ => true | .ok _ => false
+    ensure (rejected (.annotate 1 "FreeText" #[] #[1, 1, 1, 1] #[] " " "" 0) &&
+      rejected (.annotate 1 "FreeText" #[] #[] #[] "Text" "" 0) &&
+      rejected (.annotate 1 "FreeText" #[] #[1, 1, 1, 1] #[] "Text" "" 0 200)) "free text validation"
+    -- PDF/A: added, edited and recoloured, the document stays PDF/A-1b and -2b.
+    let original := dir / "original.pdf"
+    IO.FS.writeFile original Fixtures.reader
+    for (part, flavour) in [(1, "1b"), (2, "2b")] do
+      let archival := dir / s!"pdfa-{part}.pdf"
+      let made ← IO.Process.output {
+        cmd := Tools.ocrmypdf
+        args := #["--skip-text", "--output-type", s!"pdfa-{part}", "--quiet", original.toString, archival.toString] }
+      ensure (made.exitCode == 0) s!"ocrmypdf PDF/A-{part}: {made.stderr}"
+      let store : Edit.Store := { root := dir / s!"store-a{part}" }
+      let _ ← Edit.apply store archival text
+      let compliant := fun (step : String) => do
+        ensure (((← Validate.run archival.toString flavour).getObjValAs? Bool "compliant").toOption == some true)
+          s!"PDF/A-{flavour} after {step}"
+      compliant "adding text"
+      let object := (((← listOf archival 0).find? fun a => (a.getObjValAs? String "type").toOption == some "FreeText").bind
+        fun a => (a.getObjValAs? Nat "object").toOption).getD 0
+      let _ ← Edit.apply store archival (.annotationEdit 1 object "Revised remark" 1793170000)
+      let _ ← Edit.apply store archival (.annotationStyle 1 object #[0.1, 0.3, 0.8] none 1793170000)
+      compliant "editing and recolouring text"
+  IO.println "PASS free text: sized to its text, drawn in its colour, grown when edited; font embedded, PDF/A-1b and -2b kept"
+
 /-- MOBI books and Office documents open through MuPDF itself: no converter. -/
 def testBooksAndOffice : IO Unit := do
   ensure (Fixtures.crc32 "123456789".toUTF8 == 0xCBF43926) "CRC-32 check value"
@@ -1696,6 +1759,7 @@ def main (args : List String) : IO UInt32 := do
       testStampAndEncryption
       testAnnotations
       testAnnotationStyleAndMove
+      testFreeText
       testBooksAndOffice
       testSignatures
       testForms

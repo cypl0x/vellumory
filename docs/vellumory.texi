@@ -2908,7 +2908,18 @@ the same bytes.
 @findex vellumory-add-note
 Click where the note goes@comma{} then type its
   text.  The note appears as the usual note icon.
+@item @kbd{a t} (@code{vellumory-add-text})
+@kindex a t
+@findex vellumory-add-text
+Click where the text goes@comma{} then type it:
+  it is written on the page there (a FreeText annotation)@comma{} without a box@comma{}
+  @code{vellumory-annotation-text-size} points large (12 by default) and black
+  unless @code{vellumory-annotation-colors} says otherwise.  Its font is embedded@comma{}
+  so a PDF/A document stays PDF/A@.  Editing the text resizes it.
 @end table
+
+The right-click menu on a page writes text or adds a note where you
+clicked@comma{} without a second click.
 
 @node Listing editing and deleting
 @section Listing@comma{} editing and deleting
@@ -2986,9 +2997,9 @@ Like every edit@comma{} each change is recorded and can be undone.
 
 @cindex annotations, limits
 
-The kinds are highlight@comma{} underline@comma{} strike-out@comma{} squiggly underline and
-text notes.  There is no free-hand drawing@comma{} there are no shapes@comma{} and
-annotations can be moved but not resized.
+The kinds are highlight@comma{} underline@comma{} strike-out@comma{} squiggly underline@comma{} notes
+and text on the page.  There is no free-hand drawing@comma{} there are no shapes@comma{}
+and annotations can be moved but not resized.
 
 Annotations respect the archival standard PDF/A: they are marked as
 printable@comma{} as PDF/A requires.  Highlights need transparency@comma{} which PDF/A-1
@@ -3832,10 +3843,10 @@ exporting it and marking it.
 @item @kbd{M-x vellumory-print}
 @findex vellumory-print
 Print the document with @code{lp} from CUPS@comma{} on
-  Linux and macOS alike.  Choose the printer (the CUPS default first) and the pages:
-  all@comma{} this page@comma{} the marked pages@comma{} or a list such as @samp{1-4@comma{}7}.  A numeric
-  prefix argument gives the number of copies: @code{C-u 3 M-x vellumory-print}
-  prints three.
+  Linux and macOS alike.  Choose the printer (the CUPS default first) and
+  the pages: all@comma{} this page@comma{} the marked pages@comma{} or a list such as @samp{1-4@comma{}7}.
+  A numeric prefix argument gives the number of copies: @code{C-u 3 M-x
+  vellumory-print} prints three.
 @end table
 
 The File menu's Print Buffer@comma{} the Document menu@comma{} the right-click menu and
@@ -4340,7 +4351,7 @@ edit made in a script can be undone in Emacs@comma{} and the other way round.
 An operation is a JSON object whose @samp{op} field names it.  Pages are
 numbered from 1.
 
-@multitable {aaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+@multitable {aaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
 @headitem @samp{op}
 @tab Fields
 @item @samp{select}
@@ -4374,7 +4385,7 @@ numbered from 1.
 @item @samp{fill-form}
 @tab @samp{values}: an object of field names and values
 @item @samp{annotate}
-@tab @samp{page}@comma{} @samp{kind}@comma{} @samp{quads} or @samp{rect}@comma{} @samp{color}@comma{} @samp{contents}@comma{} @samp{author}@comma{} @samp{time}
+@tab @samp{page}@comma{} @samp{kind}@comma{} @samp{quads} or @samp{rect}@comma{} @samp{color}@comma{} @samp{contents}@comma{} @samp{author}@comma{} @samp{time}@comma{} @samp{size}
 @item @samp{annotation-edit}
 @tab @samp{page}@comma{} @samp{object}@comma{} @samp{contents}@comma{} @samp{time}
 @item @samp{annotation-delete}
@@ -4392,7 +4403,8 @@ The metadata fields are @samp{title}@comma{} @samp{author}@comma{} @samp{subject
 (@samp{"true"} or @samp{"false"}) and @samp{created} (an ISO 8601 date).  @samp{modify} is one of
 @samp{all}@comma{} @samp{annotate}@comma{} @samp{form}@comma{} @samp{assembly} or @samp{none}@comma{} and @samp{extract} (true or false)
 allows copying.  Annotation kinds are @samp{Highlight}@comma{} @samp{Underline}@comma{} @samp{StrikeOut}@comma{}
-@samp{Squiggly} (on @samp{quads}@comma{} eight numbers per marked line) and @samp{Text} (at @samp{rect}).
+@samp{Squiggly} (on @samp{quads}@comma{} eight numbers per marked line)@comma{} @samp{Text} (at @samp{rect})
+and @samp{FreeText} (from @samp{rect}'s upper left corner@comma{} @samp{size} points).
 
 Some examples:
 
@@ -5213,9 +5225,15 @@ The author recorded in new
 
 @defopt vellumory-annotation-colors
 The colour of each kind of
-  annotation@comma{} as red@comma{} green and blue from 0 to 1.  Default: @code{((Highlight 1.0
-  0.85 0.2) (Underline 0.1 0.45 0.9) (StrikeOut 0.85 0.15 0.15) (Squiggly 0.2
-  0.65 0.3) (Text 1.0 0.85 0.2))}.
+  annotation@comma{} as red@comma{} green and blue from 0 to 1; for FreeText@comma{} its text's.
+  Default: @code{((Highlight 1.0 0.85 0.2) (Underline 0.1 0.45 0.9) (StrikeOut
+  0.85 0.15 0.15) (Squiggly 0.2 0.65 0.3) (Text 1.0 0.85 0.2) (FreeText 0.0
+  0.0 0.0))}.
+@end defopt
+
+@defopt vellumory-annotation-text-size
+Points of the text
+  @code{vellumory-add-text} writes@comma{} 4 to 144.  Default: @code{12}.
 @end defopt
 
 @defopt vellumory-annotation-movable-types

@@ -1840,6 +1840,14 @@ the same bytes.
 #+attr_texinfo: :compact t
 - Key: a n (vellumory-add-note) :: Click where the note goes, then type its
   text.  The note appears as the usual note icon.
+- Key: a t (vellumory-add-text) :: Click where the text goes, then type it:
+  it is written on the page there (a FreeText annotation), without a box,
+  ~vellumory-annotation-text-size~ points large (12 by default) and black
+  unless ~vellumory-annotation-colors~ says otherwise.  Its font is embedded,
+  so a PDF/A document stays PDF/A.  Editing the text resizes it.
+
+The right-click menu on a page writes text or adds a note where you
+clicked, without a second click.
 
 ** Listing, editing and deleting
 #+cindex: annotation list
@@ -1889,9 +1897,9 @@ Like every edit, each change is recorded and can be undone.
 ** What annotations cannot do yet
 #+cindex: annotations, limits
 
-The kinds are highlight, underline, strike-out, squiggly underline and
-text notes.  There is no free-hand drawing, there are no shapes, and
-annotations can be moved but not resized.
+The kinds are highlight, underline, strike-out, squiggly underline, notes
+and text on the page.  There is no free-hand drawing, there are no shapes,
+and annotations can be moved but not resized.
 
 Annotations respect the archival standard PDF/A: they are marked as
 printable, as PDF/A requires.  Highlights need transparency, which PDF/A-1
@@ -2818,36 +2826,37 @@ edit made in a script can be undone in Emacs, and the other way round.
 An operation is a JSON object whose =op= field names it.  Pages are
 numbered from 1.
 
-| =op=                | Fields                                                                         |
-|---------------------+--------------------------------------------------------------------------------|
-| =select=            | =pages=: the pages to keep, in order (reorders, deletes, duplicates)           |
-| =rotate=            | =pages=, =degrees= (a multiple of 90; positive is clockwise)                   |
-| =append=            | =files=: documents whose pages are appended                                    |
-| =compress=          | none                                                                           |
-| =linearize=         | none                                                                           |
-| =labels=            | =specs=: qpdf page-label specifications, such as =["1:r", "5:D"]=              |
-| =remove-labels=     | none                                                                           |
-| =attach=            | =file=, =key=, optional =description= and =relationship=                       |
-| =detach=            | =key=                                                                          |
-| =metadata=          | =set= (an object), =remove= (a list), =date= (ISO 8601)                        |
-| =ocr=               | =languages= (default =eng=), =mode= (=skip=, =redo= or =force=)                |
-| =stamp=             | =file=, =under= (default false), =pages= (default =1-z=)                       |
-| =encrypt=           | =user=, =owner=, =print= (=full=, =low=, =none=), =modify=, =extract=          |
-| =decrypt=           | =password=                                                                     |
-| =fill-form=         | =values=: an object of field names and values                                  |
-| =annotate=          | =page=, =kind=, =quads= or =rect=, =color=, =contents=, =author=, =time=       |
-| =annotation-edit=   | =page=, =object=, =contents=, =time=                                           |
-| =annotation-delete= | =page=, =object=                                                               |
-| =annotation-style=  | =page=, =object=, =color= (three numbers, or none), optional =opacity=, =time= |
-| =annotation-move=   | =page=, =object=, =dx= and =dy= (points right and down), =time=                |
-| =syntax=            | =qdf=: the path of an edited QDF file                                          |
+| =op=                | Fields                                                                           |
+|---------------------+----------------------------------------------------------------------------------|
+| =select=            | =pages=: the pages to keep, in order (reorders, deletes, duplicates)             |
+| =rotate=            | =pages=, =degrees= (a multiple of 90; positive is clockwise)                     |
+| =append=            | =files=: documents whose pages are appended                                      |
+| =compress=          | none                                                                             |
+| =linearize=         | none                                                                             |
+| =labels=            | =specs=: qpdf page-label specifications, such as =["1:r", "5:D"]=                |
+| =remove-labels=     | none                                                                             |
+| =attach=            | =file=, =key=, optional =description= and =relationship=                         |
+| =detach=            | =key=                                                                            |
+| =metadata=          | =set= (an object), =remove= (a list), =date= (ISO 8601)                          |
+| =ocr=               | =languages= (default =eng=), =mode= (=skip=, =redo= or =force=)                  |
+| =stamp=             | =file=, =under= (default false), =pages= (default =1-z=)                         |
+| =encrypt=           | =user=, =owner=, =print= (=full=, =low=, =none=), =modify=, =extract=            |
+| =decrypt=           | =password=                                                                       |
+| =fill-form=         | =values=: an object of field names and values                                    |
+| =annotate=          | =page=, =kind=, =quads= or =rect=, =color=, =contents=, =author=, =time=, =size= |
+| =annotation-edit=   | =page=, =object=, =contents=, =time=                                             |
+| =annotation-delete= | =page=, =object=                                                                 |
+| =annotation-style=  | =page=, =object=, =color= (three numbers, or none), optional =opacity=, =time=   |
+| =annotation-move=   | =page=, =object=, =dx= and =dy= (points right and down), =time=                  |
+| =syntax=            | =qdf=: the path of an edited QDF file                                            |
 
 The metadata fields are =title=, =author=, =subject=, =keywords=, =creator=,
 =producer=, =language= (a language tag such as =en-GB=), =display-title=
 (="true"= or ="false"=) and =created= (an ISO 8601 date).  =modify= is one of
 =all=, =annotate=, =form=, =assembly= or =none=, and =extract= (true or false)
 allows copying.  Annotation kinds are =Highlight=, =Underline=, =StrikeOut=,
-=Squiggly= (on =quads=, eight numbers per marked line) and =Text= (at =rect=).
+=Squiggly= (on =quads=, eight numbers per marked line), =Text= (at =rect=)
+and =FreeText= (from =rect='s upper left corner, =size= points).
 
 Some examples:
 
@@ -3352,9 +3361,12 @@ reason.
 - User Option: vellumory-annotation-author :: The author recorded in new
   annotations.  Default: your ~user-full-name~.
 - User Option: vellumory-annotation-colors :: The colour of each kind of
-  annotation, as red, green and blue from 0 to 1.  Default: ~((Highlight 1.0
-  0.85 0.2) (Underline 0.1 0.45 0.9) (StrikeOut 0.85 0.15 0.15) (Squiggly 0.2
-  0.65 0.3) (Text 1.0 0.85 0.2))~.
+  annotation, as red, green and blue from 0 to 1; for FreeText, its text's.
+  Default: ~((Highlight 1.0 0.85 0.2) (Underline 0.1 0.45 0.9) (StrikeOut
+  0.85 0.15 0.15) (Squiggly 0.2 0.65 0.3) (Text 1.0 0.85 0.2) (FreeText 0.0
+  0.0 0.0))~.
+- User Option: vellumory-annotation-text-size :: Points of the text
+  ~vellumory-add-text~ writes, 4 to 144.  Default: ~12~.
 - User Option: vellumory-annotation-movable-types :: The types of
   annotation that dragging on the page moves.  Default: ~("Text" "FreeText"
   "FileAttachment" "Stamp" "Caret" "Sound")~.

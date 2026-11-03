@@ -255,6 +255,10 @@ ERT; on the host: the previews of a reopened document are not rendered again)
 ** DONE Doom module :tools vellumory: lazy loading, localleader + which-key,
 doom-modeline segment, popup rules, ESC, real buffers; verified live in a
 reproducible Doom on the user's exact Emacs (keys, wheel, which-key, modeline)
+** DONE Text written on the page (FreeText, =a t= or the right-click menu), sized
+to its text and resized when edited; the font MuPDF leaves out (Helvetica)
+embedded in its appearance, re-embedded after every restyle, so PDF/A-1b and
+-2b documents stay valid (veraPDF in the Lean suite)
 ** DONE Printing with CUPS (M-x vellumory-print, the File menu's Print Buffer,
 menus): printer, pages (all, this, marked, ranges) and copies; checked
 end to end against a user-run =cupsd= and =ippeveprinter= (job with

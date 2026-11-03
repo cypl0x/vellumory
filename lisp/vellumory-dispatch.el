@@ -77,6 +77,7 @@
     ("q" "Squiggly underline" vellumory-squiggly)]
    ["Notes"
     ("n" "Add a note" vellumory-add-note)
+    ("t" "Write text on the page" vellumory-add-text)
     ("l" "List annotations" vellumory-annotations)]])
 
 (transient-define-prefix vellumory-dispatch-export ()
