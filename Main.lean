@@ -137,6 +137,38 @@ def infoCmd : Cmd := `[Cli|
     file : String; "Document."
 ]
 
+/-- One page as a raster, for a preview such as Org's: rendered once into the
+    persistent cache under its content address (the document's hash, the
+    page, the width, the engine), then found there; its path is printed. -/
+def runRender (p : Parsed) : IO UInt32 := jsonCommand do
+  let file := fileArg p
+  let page := p.positionalArg! "page" |>.as! Nat
+  let width := p.positionalArg! "width" |>.as! Nat
+  if page == 0 then throw <| IO.userError "Pages count from 1"
+  if width == 0 || width > 4096 then throw <| IO.userError "The width is 1 to 4096 pixels"
+  let bytes ← IO.FS.readBinFile file
+  let key ← Native.sha256
+    s!"preview {← Native.version} {← Native.sha256 bytes} {page} {width}".toUTF8
+  let dir := (← Worker.xdgDirectory "XDG_CACHE_HOME" ".cache") / "vellumory" / "rasters" / (key.take 2).toString
+  let path := dir / (key ++ ".ppm")
+  unless ← path.pathExists do
+    let doc ← Native.openDocumentAs bytes file.toString ""
+    let sizes ← Native.pageSizes doc
+    let some (w, h) := sizes[page - 1]?
+      | throw <| IO.userError s!"There is no page {page}: the document has {sizes.size}"
+    let height := (h * width.toFloat / w).ceil.toUInt64.toUInt32
+    Worker.privateDirectory dir
+    let _ ← Native.renderTimed doc (← Native.Cookie.new) (page - 1).toUInt32 width.toUInt32 0 0
+      width.toUInt32 height (file := some path)
+  return Json.mkObj [("path", toJson path.toString), ("page", toJson page), ("width", toJson width)]
+def renderCmd : Cmd := `[Cli|
+  render VIA runRender; "Render one page WIDTH pixels wide into the cache and print its path as JSON."
+  ARGS:
+    file : String; "Document."
+    page : Nat; "Page, counted from 1."
+    width : Nat; "Width in pixels."
+]
+
 def runPreflight (p : Parsed) : IO UInt32 := do
   let bytes ← IO.FS.readBinFile (fileArg p)
   let doc ← Native.openDocumentAs bytes (fileArg p).toString ""
@@ -365,6 +397,7 @@ def rootCmd : Cmd := `[Cli|
     snapshotCmd;
     textCmd;
     infoCmd;
+    renderCmd;
     preflightCmd;
     validateCmd;
     batchValidateCmd;

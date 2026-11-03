@@ -124,11 +124,46 @@ Markdown and LaTeX get the text alone."
   (let ((file (read-file-name "Document: " nil nil t)))
     (format "vellumory:%s::%d" (abbreviate-file-name file) (read-number "Page: " 1))))
 
+(defcustom vellumory-org-preview-width 480
+  "Width in pixels of the page an Org preview of a vellumory: link shows.
+`org-link-preview' (Org 9.8) shows the linked page in place of the link."
+  :type 'natnum :group 'vellumory)
+
+(declare-function vellumory--cli "vellumory-edit" (args callback &optional buffer input))
+
+(defun vellumory-org-preview (overlay path _link)
+  "Show the page PATH links to on OVERLAY, for `org-link-preview'.
+The page is rendered once into the content-addressed cache and found there
+after; the image comes as soon as it is ready.  As in the reader, it is
+rendered in device pixels: sharp on a scaled (HiDPI) frame."
+  (pcase-let* ((`(,file ,page ,_) (vellumory-org--parse path))
+               (file (and file (not (string-empty-p file)) (expand-file-name file)))
+               (window (or (get-buffer-window (overlay-buffer overlay) t) (selected-window)))
+               (scale (if (fboundp 'frame-scale-factor)
+                          (max 1.0 (frame-scale-factor (window-frame window)))
+                        1.0)))
+    ;; An Emacs built without images (such as emacs-nox) shows the link.
+    (when (and file (file-readable-p file) (image-type-available-p 'pbm))
+      (require 'vellumory-edit)
+      (vellumory--cli (list "render" file (number-to-string (1+ (or page 0)))
+                            (number-to-string (round (* scale vellumory-org-preview-width))))
+                      (lambda (result)
+                        (when (overlay-buffer overlay)
+                          ;; Not the link's face: its underline would cross the page.
+                          (overlay-put overlay 'face 'default)
+                          (overlay-put overlay 'display
+                                       (create-image (alist-get 'path result) 'pbm nil
+                                                     :width vellumory-org-preview-width :scale 1.0
+                                                     :transform-smoothing (/= scale 1.0)
+                                                     :ascent 'center)))))
+      t)))
+
 (org-link-set-parameters "vellumory"
                          :follow #'vellumory-org-follow
                          :store #'vellumory-org-store
                          :export #'vellumory-org-export
-                         :complete #'vellumory-org-complete)
+                         :complete #'vellumory-org-complete
+                         :preview #'vellumory-org-preview)
 
 ;;;; org-pdftools compatibility
 
@@ -160,7 +195,6 @@ Annotation (;;) and search (??) suffixes open the page."
 (declare-function org-latex-export-to-pdf "ox-latex" (&optional async subtreep visible-only body-only ext-plist))
 (declare-function org-collect-keywords "org" (keywords &optional unique directory))
 (declare-function org-export-define-derived-backend "ox" (child parent &rest body))
-(declare-function vellumory--cli "vellumory-edit" (args callback &optional buffer input))
 (declare-function vellumory-validate "vellumory-validate" (flavour))
 
 (defcustom vellumory-org-export-standards '("ua-2" "a-4f")

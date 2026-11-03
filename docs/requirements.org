@@ -257,7 +257,9 @@ doom-modeline segment, popup rules, ESC, real buffers; verified live in a
 reproducible Doom on the user's exact Emacs (keys, wheel, which-key, modeline)
 ** DONE Org links: =vellumory:FILE::PAGE::Y= store (exact position; selection or
 outline heading as description), follow, export (=#page=N= for HTML/LaTeX),
-completion; org-pdftools =pdf:= links open here when pdf-tools is absent (ERT)
+completion; org-pdftools =pdf:= links open here when pdf-tools is absent (ERT);
+Org 9.8 link previews show the linked page, rendered once into the cache by
+=vellumory render= (ERT, and seen in the review)
 ** DONE org-noter backend: follow, goto, precise (selection or click on any page),
 selected text, skeleton from the outline; ERT runs a real session
 ** DONE org-noter in Doom: real-key note insertion (=i=, title, RET) creates the

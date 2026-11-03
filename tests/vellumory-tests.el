@@ -2855,3 +2855,33 @@ is current (the rest timers run in any)."
           (should (equal (json-parse-string (string-trim written) :object-type 'alist)
                          '((id . 8) (method . "rest") (params (deep . t))))))
       (delete-process vellumory--worker))))
+
+(ert-deftest vellumory-org-link-preview-shows-the-page ()
+  "`org-link-preview' (Org 9.8) shows a vellumory: link's page in its place:
+rendered once into the content-addressed cache, then found there."
+  (let* ((program (getenv "VELLUMORY_TEST_PROGRAM")) (source (getenv "VELLUMORY_TEST_PDF"))
+         (cache (make-temp-file "vellumory-preview-" t))
+         (process-environment (cons (concat "XDG_CACHE_HOME=" cache) process-environment))
+         (vellumory-program program))
+    (skip-unless (and program source (fboundp 'org-link-preview) (image-type-available-p 'pbm)))
+    (require 'vellumory-org)
+    (unwind-protect
+        (let (paths)
+          (dotimes (_ 2)
+            (with-temp-buffer
+              (org-mode)
+              (insert (format "See [[vellumory:%s::2]].\n" source))
+              (org-link-preview-region t t (point-min) (point-max))
+              (let ((overlay (car (seq-filter (lambda (o) (overlay-get o 'org-image-overlay))
+                                              (overlays-in (point-min) (point-max))))))
+                (should overlay)
+                (should (vellumory-test--wait (lambda () (eq (car-safe (overlay-get overlay 'display)) 'image)) 30))
+                ;; Shown at the preview width, without the link's underline across it.
+                (should (eq (plist-get (cdr (overlay-get overlay 'display)) :width) vellumory-org-preview-width))
+                (should (eq (overlay-get overlay 'face) 'default))
+                (push (plist-get (cdr (overlay-get overlay 'display)) :file) paths))))
+          ;; The same raster, from the cache, under the cache directory.
+          (should (equal (car paths) (cadr paths)))
+          (should (string-prefix-p (file-truename cache) (file-truename (car paths))))
+          (should (file-exists-p (car paths))))
+      (delete-directory cache t))))

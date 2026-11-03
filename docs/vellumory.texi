@@ -3887,6 +3887,19 @@ When Org exports a @samp{vellumory:} link to HTML or Markdown@comma{} it becomes
 to @samp{FILE#page=N}@comma{} which browsers open at the page; @LaTeX{} gets the same
 through @samp{\href}.  Other back-ends get the description alone.
 
+@cindex link previews
+@cindex org-link-preview
+@vindex vellumory-org-preview-width
+With Org 9.8 or later@comma{} Org's link previews show the linked page in place
+of a @samp{vellumory:} link.  @code{C-c C-x C-v} (@code{org-link-preview}) previews the
+links without a description in the current entry; @code{C-1 C-c C-x C-v} also
+those with one@comma{} such as the links @code{org-store-link} makes; @samp{#+STARTUP:
+linkpreviews} previews the links without a description when the file
+opens.  The page is @code{vellumory-org-preview-width} pixels wide (480 by
+default) and rendered once: it is kept in the cache under
+@samp{~/.cache/vellumory/rasters/}@comma{} so the next preview of the same page of the
+same document shows it at once.
+
 @cindex org-pdftools
 Notes written with org-pdftools use @samp{pdf:} links@comma{} such as
 @samp{pdf:paper.pdf::7++0.42}.  Vellumory opens them@comma{} at the page and the height
@@ -4170,6 +4183,10 @@ fonts@comma{} images and attachments@comma{} as JSON@.
 @item @code{vellumory text FILE}
 The text of every page; pages are separated by
 form feeds.
+@item @code{vellumory render FILE PAGE WIDTH}
+Render one page (PAGE counts from 1)
+WIDTH pixels wide as a PPM image into the cache@comma{} unless it is there
+already@comma{} and print its path as JSON@.  Org's link previews use it.
 @item @code{vellumory annotations FILE}
 The annotations (not links or form fields)
 with their pages@comma{} as JSON@.

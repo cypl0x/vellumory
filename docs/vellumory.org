@@ -2484,6 +2484,19 @@ When Org exports a =vellumory:= link to HTML or Markdown, it becomes a link
 to =FILE#page=N=, which browsers open at the page; LaTeX gets the same
 through =\href=.  Other back-ends get the description alone.
 
+#+cindex: link previews
+#+cindex: org-link-preview
+#+vindex: vellumory-org-preview-width
+With Org 9.8 or later, Org's link previews show the linked page in place
+of a =vellumory:= link.  ~C-c C-x C-v~ (~org-link-preview~) previews the
+links without a description in the current entry; ~C-1 C-c C-x C-v~ also
+those with one, such as the links ~org-store-link~ makes; =#+STARTUP:
+linkpreviews= previews the links without a description when the file
+opens.  The page is ~vellumory-org-preview-width~ pixels wide (480 by
+default) and rendered once: it is kept in the cache under
+=~/.cache/vellumory/rasters/=, so the next preview of the same page of the
+same document shows it at once.
+
 #+cindex: org-pdftools
 Notes written with org-pdftools use =pdf:= links, such as
 =pdf:paper.pdf::7++0.42=.  Vellumory opens them, at the page and the height
@@ -2686,6 +2699,9 @@ field of the report gives the verdict.
   fonts, images and attachments, as JSON.
 - ~vellumory text FILE~ :: The text of every page; pages are separated by
   form feeds.
+- ~vellumory render FILE PAGE WIDTH~ :: Render one page (PAGE counts from 1)
+  WIDTH pixels wide as a PPM image into the cache, unless it is there
+  already, and print its path as JSON.  Org's link previews use it.
 - ~vellumory annotations FILE~ :: The annotations (not links or form fields)
   with their pages, as JSON.
 - ~vellumory form FILE~ :: The form fields: name, type, value and choices.

@@ -363,8 +363,10 @@ one listed./
 - *Org links*: =org-store-link= in a document stores the exact place,
   e.g. =vellumory:~/papers/paper.pdf::7::312.5=, described by the
   selection or the nearest heading.  Export turns them into ~FILE#page=7~
-  links for HTML and LaTeX.  org-pdftools' =pdf:= links open in Vellumory
-  when nothing else defines them.
+  links for HTML and LaTeX.  With Org 9.8, =C-c C-x C-v= shows the linked
+  page in place of the link, rendered once into the cache (org-inline-pdf
+  does this for plain links to PDF files).  org-pdftools' =pdf:= links
+  open in Vellumory when nothing else defines them.
 - *org-noter*: sessions run on Vellumory documents; notes follow the page,
   precise notes start at the selection or a click on any visible page, and
   =org-noter-create-skeleton= turns the outline into headings.
@@ -1378,6 +1380,7 @@ and =compliant: false=).
 #+begin_example
 vellumory info FILE                    # the details report
 vellumory text FILE                    # every page's text, form feeds between pages
+vellumory render FILE 3 800           # page 3, 800 pixels wide, into the cache; prints its path
 vellumory annotations FILE             # annotations with their pages
 vellumory form FILE                    # form fields
 vellumory signatures FILE              # verify every signature
