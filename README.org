@@ -2,10 +2,11 @@
 
 A PDF reader for GNU Emacs.  Vellumory shows PDF pages in one continuous,
 sharp column in an ordinary Emacs buffer, rendered by MuPDF on worker
-threads outside Emacs' main thread.  It also reads XPS, EPUB, CBZ and FB2,
-has a reading mode that reflows a document to the window, validates PDF/A
-and PDF/UA with veraPDF, adds a text layer with OCR, and records every edit
-it makes so that any earlier state of a file can be restored byte for byte.
+threads outside Emacs' main thread.  It also reads XPS, EPUB, MOBI, CBZ, FB2
+and office documents, has a reading mode that reflows a document to the
+window, validates PDF/A and PDF/UA with veraPDF, adds a text layer with OCR,
+and records every edit it makes so that any earlier state of a file can be
+restored byte for byte.
 
 It is an Emacs PDF viewer in the line of DocView and pdf-tools, and an
 alternative to them; it works in plain Emacs, with evil, and as a Doom
@@ -164,10 +165,12 @@ you do not need to learn the keys first.
 - *Reading across windows*: =M-x vellumory-follow-split= chains
   side-by-side windows by pixels, so a page continues from the foot of one
   column to the head of the next.
-- *Formats*: PDF, XPS, EPUB, CBZ and FB2 through MuPDF.  Like DocView,
-  DVI, PostScript, DjVu and office documents are read through a cached
-  conversion to PDF when dvipdfmx, ps2pdf, ddjvu or LibreOffice is
-  installed.  EPUB and FB2 text size follows =C-x C-+= and =C-x C--=.
+- *Formats*: PDF, XPS, EPUB, MOBI, CBZ and FB2 through MuPDF.  Like
+  DocView, DVI, PostScript, DjVu and office documents are read through a
+  cached conversion to PDF when dvipdfmx, ps2pdf, ddjvu or LibreOffice is
+  installed; without LibreOffice, MuPDF reads the text of Word, Excel,
+  PowerPoint and HWPX files itself.  The text size of e-books and office
+  documents read by MuPDF follows =C-x C-+= and =C-x C--=.
 - *Virtual documents*: pdf-tools' =.vpdf= files (pages and page regions of
   other documents, in your order) open unchanged and behave like one PDF.
 - *Your place is kept*: page, position on it and zoom, per file and per
@@ -439,25 +442,25 @@ Versions checked: DocView of Emacs 31.1; pdf-tools 20260102.1101;
 emacs-reader at revision 4fca3aa (Codeberg); EAF PDF viewer
 of 2025-07-26 (nixpkgs); Vellumory 0.1.0.
 
-|                        | Vellumory                                           | DocView                                    | pdf-tools                                     | emacs-reader                              | EAF PDF viewer                   |
-|------------------------+-----------------------------------------------------+--------------------------------------------+-----------------------------------------------+-------------------------------------------+----------------------------------|
-| Needs besides Emacs    | its worker (Lean, MuPDF), built from source         | a converter (Ghostscript or MuPDF)         | epdfinfo (poppler), compiled on install       | a dynamic module (MuPDF), built with make | Python, Qt and PyMuPDF           |
-| Pages drawn by         | Emacs                                               | Emacs                                      | Emacs                                         | Emacs                                     | Qt, over the Emacs frame         |
-| Rendering              | worker threads, visible tiles only                  | every page to an image file up front       | epdfinfo, one page per request                | 8 threads in the module                   | PyMuPDF                          |
-| Continuous pages       | yes                                                 | page edge advances (=doc-view-continuous=) | roll mode (=pdf-view-roll-minor-mode=)        | one page, continuing to the next          | ?                                |
-| Two pages side by side | yes                                                 | no                                         | no                                            | no                                        | ?                                |
-| Formats                | PDF XPS EPUB CBZ FB2; DVI PS DjVu office converted  | PDF PS DVI DjVu ODF EPUB CBZ FB2 XPS       | PDF                                           | PDF EPUB MOBI FB2 XPS CBZ, office         | PDF XPS CBZ EPUB FB2, office     |
-| Search                 | incremental, regexp, highlighted; occur             | regexp, by page, no highlights             | isearch (regexp too), highlighted; occur      | no                                        | yes                              |
-| Select and copy        | mouse, keyboard caret                               | text view (=C-c C-t=)                      | mouse                                         | no                                        | yes                              |
-| Links                  | follow, hints, hover preview                        | no                                         | follow, hints                                 | no                                        | follow                           |
-| Outline                | sidebar, Imenu                                      | Imenu                                      | outline buffer, Imenu                         | outline buffer, Imenu                     | yes                              |
-| Dark pages             | theme colours, inverted, night mode                 | SVG face colours                           | midnight, themed                              | dark mode                                 | inverted                         |
-| Annotations            | 4 markup kinds, notes; edit, recolour, move, delete | no                                         | text and markup; edit, recolour, move, delete | no                                        | 4 markup kinds, text; edit, move |
-| Presentation           | full screen, page transitions                       | no                                         | no                                            | yes                                       | yes                              |
-| SyncTeX                | yes                                                 | no                                         | yes                                           | no                                        | yes                              |
-| org-noter              | yes                                                 | yes                                        | yes                                           | no                                        | no                               |
-| evil keys              | built in                                            | evil-collection                            | evil-collection                               | evil-collection                           | its own single keys              |
-| Platforms              | Linux (tested)                                      | any Emacs with PNG and a converter         | Linux; macOS and Windows "as is"              | Linux, macOS, Windows                     | ?                                |
+|                        | Vellumory                                                | DocView                                    | pdf-tools                                     | emacs-reader                              | EAF PDF viewer                   |
+|------------------------+----------------------------------------------------------+--------------------------------------------+-----------------------------------------------+-------------------------------------------+----------------------------------|
+| Needs besides Emacs    | its worker (Lean, MuPDF), built from source              | a converter (Ghostscript or MuPDF)         | epdfinfo (poppler), compiled on install       | a dynamic module (MuPDF), built with make | Python, Qt and PyMuPDF           |
+| Pages drawn by         | Emacs                                                    | Emacs                                      | Emacs                                         | Emacs                                     | Qt, over the Emacs frame         |
+| Rendering              | worker threads, visible tiles only                       | every page to an image file up front       | epdfinfo, one page per request                | 8 threads in the module                   | PyMuPDF                          |
+| Continuous pages       | yes                                                      | page edge advances (=doc-view-continuous=) | roll mode (=pdf-view-roll-minor-mode=)        | one page, continuing to the next          | ?                                |
+| Two pages side by side | yes                                                      | no                                         | no                                            | no                                        | ?                                |
+| Formats                | PDF XPS EPUB MOBI CBZ FB2, office; DVI PS DjVu converted | PDF PS DVI DjVu ODF EPUB CBZ FB2 XPS       | PDF                                           | PDF EPUB MOBI FB2 XPS CBZ, office         | PDF XPS CBZ EPUB FB2, office     |
+| Search                 | incremental, regexp, highlighted; occur                  | regexp, by page, no highlights             | isearch (regexp too), highlighted; occur      | no                                        | yes                              |
+| Select and copy        | mouse, keyboard caret                                    | text view (=C-c C-t=)                      | mouse                                         | no                                        | yes                              |
+| Links                  | follow, hints, hover preview                             | no                                         | follow, hints                                 | no                                        | follow                           |
+| Outline                | sidebar, Imenu                                           | Imenu                                      | outline buffer, Imenu                         | outline buffer, Imenu                     | yes                              |
+| Dark pages             | theme colours, inverted, night mode                      | SVG face colours                           | midnight, themed                              | dark mode                                 | inverted                         |
+| Annotations            | 4 markup kinds, notes; edit, recolour, move, delete      | no                                         | text and markup; edit, recolour, move, delete | no                                        | 4 markup kinds, text; edit, move |
+| Presentation           | full screen, page transitions                            | no                                         | no                                            | yes                                       | yes                              |
+| SyncTeX                | yes                                                      | no                                         | yes                                           | no                                        | yes                              |
+| org-noter              | yes                                                      | yes                                        | yes                                           | no                                        | no                               |
+| evil keys              | built in                                                 | evil-collection                            | evil-collection                               | evil-collection                           | its own single keys              |
+| Platforms              | Linux (tested)                                           | any Emacs with PNG and a converter         | Linux; macOS and Windows "as is"              | Linux, macOS, Windows                     | ?                                |
 
 Vellumory also inspects, validates and edits documents (see [[#features][Features]]);
 the matrix leaves those out.
@@ -471,20 +474,20 @@ module adds around it.  Each of those additions, from the module's
 =config.el= and =packages.el= (Doom at the commit this repository's flake
 pins), and what =:tools vellumory= does instead:
 
-| =:tools pdf= (pdf-tools)                                  | =:tools vellumory=                                                               |
-|-----------------------------------------------------------+----------------------------------------------------------------------------------|
-| PDFs open by name and by content                          | the same (=vellumory-install=), and EPUB, XPS, CBZ, FB2, DjVu, PS, DVI           |
-| Without =epdfinfo=: plain text, and a message to build it | without the worker: a message naming it and =M-x vellumory-doctor=               |
-| =epdfinfo= compiles in Emacs (=M-x pdf-tools-install=)    | the worker comes built from Nix, or =lake build=; nothing compiles in Emacs      |
-| One page at a time, fit to the page by default            | continuous pages, fit to the width by default (=P= fits the page)                |
-| HiDPI by scaling                                          | rendered at the display's resolution                                             |
-| Popup rules for the outline and annotation buffers        | contents and previews in a side window that follows its document                 |
-| =q= kills the buffer                                      | =q= quits                                                                        |
-| Midnight colours refreshed when the theme changes         | page colours that follow the theme, inversion, and night mode per document       |
-| No "file is large" question for PDFs                      | none for any document Vellumory opens                                            |
-| Reading position by saveplace-pdf-view (page and zoom)    | the exact position (page, offset, zoom), by file and by content                  |
-| =pdf:= Org links by org-pdftools                          | =vellumory:= links with exact positions; =pdf:= links open too without pdf-tools |
-| evil keys from evil-collection                            | its own evil keys, =SPC m= and the =?= menu                                      |
+| =:tools pdf= (pdf-tools)                                  | =:tools vellumory=                                                                   |
+|-----------------------------------------------------------+--------------------------------------------------------------------------------------|
+| PDFs open by name and by content                          | the same (=vellumory-install=), and EPUB, MOBI, XPS, CBZ, FB2, office, DjVu, PS, DVI |
+| Without =epdfinfo=: plain text, and a message to build it | without the worker: a message naming it and =M-x vellumory-doctor=                   |
+| =epdfinfo= compiles in Emacs (=M-x pdf-tools-install=)    | the worker comes built from Nix, or =lake build=; nothing compiles in Emacs          |
+| One page at a time, fit to the page by default            | continuous pages, fit to the width by default (=P= fits the page)                    |
+| HiDPI by scaling                                          | rendered at the display's resolution                                                 |
+| Popup rules for the outline and annotation buffers        | contents and previews in a side window that follows its document                     |
+| =q= kills the buffer                                      | =q= quits                                                                            |
+| Midnight colours refreshed when the theme changes         | page colours that follow the theme, inversion, and night mode per document           |
+| No "file is large" question for PDFs                      | none for any document Vellumory opens                                                |
+| Reading position by saveplace-pdf-view (page and zoom)    | the exact position (page, offset, zoom), by file and by content                      |
+| =pdf:= Org links by org-pdftools                          | =vellumory:= links with exact positions; =pdf:= links open too without pdf-tools     |
+| evil keys from evil-collection                            | its own evil keys, =SPC m= and the =?= menu                                          |
 
 What pdf-tools still does that Vellumory does not is in the next section.
 
@@ -499,8 +502,7 @@ What pdf-tools still does that Vellumory does not is in the next section.
   documentation says it works on macOS and Windows.  org-pdftools was
   written for it, and org-noter supports it.  On a short document its roll
   mode opened as fast as Vellumory (71–86 ms against 77–90 ms).
-- *emacs-reader* is one dynamic module, no separate process; it opens
-  MOBI, and office documents through MuPDF without LibreOffice; it builds
+- *emacs-reader* is one dynamic module, no separate process; it builds
   on macOS and Windows, has a Guix channel, and its README says it is to
   be published on GNU ELPA.
 - *EAF's PDF viewer* draws in Qt, outside Emacs' display engine.  Where the

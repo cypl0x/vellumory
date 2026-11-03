@@ -59,9 +59,9 @@ Vellumory is a document reader for GNU Emacs.  It shows PDF pages in an
 ordinary Emacs buffer, sharp and continuous, and keeps up while you
 scroll.  When the pages are too wide for your window, or you would simply
 rather read text, its reading mode reflows the document into one column
-of text that fits the window.  It also reads XPS, EPUB, CBZ comic books and FB2 books, and,
-through converters you may already have installed, DVI, PostScript, DjVu
-and office documents.
+of text that fits the window.  It also reads XPS, CBZ comic books, the
+e-book formats EPUB, MOBI and FB2, office documents, and, through
+converters you may already have installed, DVI, PostScript and DjVu.
 
 It is made of three parts that work together:
 
@@ -1312,16 +1312,18 @@ turns on its own mode instead.
 ** Other formats
 #+cindex: formats
 #+cindex: EPUB
+#+cindex: MOBI
 #+cindex: XPS
 #+cindex: CBZ
 #+cindex: FB2
 
 MuPDF reads several formats besides PDF, and so does Vellumory: XPS and
-OpenXPS, CBZ comic book archives, and the e-book formats EPUB and FB2.
-~vellumory-file-extensions~ lists the extensions that ~vellumory-install~
-associates.
+OpenXPS, CBZ comic book archives, and the e-book formats EPUB, MOBI and
+FB2.  ~vellumory-file-extensions~ lists the extensions that
+~vellumory-install~ associates.
 
-EPUB and FB2 books have no fixed pages.  Vellumory lays them out on pages
+EPUB, MOBI and FB2 books have no fixed pages, nor have office documents
+MuPDF reads (see below).  Vellumory lays them out on pages
 of ~vellumory-reflow-page-size~ points (450 × 600 by default), with text of
 ~vellumory-reflow-text-size~ points (11 by default), and applies the CSS file
 ~vellumory-reflow-stylesheet~ if you set one.  The text-scale keys change the
@@ -1346,10 +1348,16 @@ Like DocView, Vellumory reads some formats by converting them to PDF:
 | OpenDocument, Word, Excel, PowerPoint, RTF | soffice (LibreOffice) |
 
 ~vellumory-converters~ holds these rules, and you can change them.  A format
-is associated only when its converter is installed.  PostScript is left
-to ~ps-mode~, where it is usually edited: read a PostScript file with ~M-x
-vellumory-converted-mode~ (~vellumory-converted-not-visited~ lists the formats
-treated this way).
+is associated only when its converter is installed.  Office documents
+are the exception: without LibreOffice, MuPDF reads Word, Excel and
+PowerPoint files (docx, xlsx, pptx) and HWPX itself
+(~vellumory-native-office-extensions~).  LibreOffice lays a document out
+as an office suite does.  MuPDF reads its text (paragraphs, headings and
+footnotes, a spreadsheet's cells as tables, the text of slides) and flows
+it into pages, as it does an e-book; pictures and the original page layout
+are left out.  PostScript is left to ~ps-mode~, where it is usually
+edited: read a PostScript file with ~M-x vellumory-converted-mode~
+(~vellumory-converted-not-visited~ lists the formats treated this way).
 
 #+attr_texinfo: :compact t
 - Key: M-x vellumory-converted-mode :: Read the file in this buffer
@@ -3156,7 +3164,7 @@ A small example:
 
 - User Option: vellumory-file-extensions :: File extensions that
   ~vellumory-install~ opens in Vellumory.  Default: ~("pdf" "xps" "oxps"
-  "cbz" "fb2" "epub")~.
+  "cbz" "fb2" "epub" "mobi")~.
 - User Option: vellumory-converters :: How other formats become PDF: a list
   of ~(EXTENSIONS PROGRAM ARGUMENT…)~.  Among the arguments, ~input~ and
   ~output~ stand for the files, and ~directory~ for a directory into which the
@@ -3164,6 +3172,9 @@ A small example:
   program is not installed is skipped.  Default: DVI with dvipdfmx,
   PostScript and EPS with ps2pdf, DjVu with ddjvu, and odt, ods, odp, odg,
   doc, docx, xls, xlsx, ppt, pptx and rtf with LibreOffice's soffice.
+- User Option: vellumory-native-office-extensions :: Office formats MuPDF
+  reads itself when no converter for them is installed.  Default: ~("docx"
+  "xlsx" "pptx" "hwpx")~.
 - User Option: vellumory-converted-not-visited :: Converted formats that
   ~vellumory-install~ does not open as documents, because they are usually
   edited.  Default: ~("ps" "eps")~.

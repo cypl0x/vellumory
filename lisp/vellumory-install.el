@@ -41,7 +41,7 @@
   "Dired prefix for batch commands on marked documents, or nil for none."
   :type '(choice (const :tag "None" nil) key) :group 'vellumory)
 
-(defcustom vellumory-file-extensions '("pdf" "xps" "oxps" "cbz" "fb2" "epub")
+(defcustom vellumory-file-extensions '("pdf" "xps" "oxps" "cbz" "fb2" "epub" "mobi")
   "File extensions `vellumory-install' associates with `vellumory-mode'."
   :type '(repeat string))
 

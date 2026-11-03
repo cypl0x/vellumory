@@ -56,6 +56,13 @@ for one the program writes INPUT's name with the extension .pdf into.  An
 entry whose program is not installed is skipped."
   :type '(repeat (cons (repeat string) (cons string (repeat sexp)))) :group 'vellumory)
 
+(defcustom vellumory-native-office-extensions '("docx" "xlsx" "pptx" "hwpx")
+  "Office formats MuPDF reads itself, when no converter for them is installed.
+LibreOffice (in `vellumory-converters') lays a document out as an office
+suite does; MuPDF reads its text (a spreadsheet's cells as tables) and
+flows it into pages, as it does an e-book, leaving pictures out."
+  :type '(repeat string) :group 'vellumory)
+
 (defvar-local vellumory--original-watch nil "Watch on the original, to convert it again.")
 (defvar-local vellumory--reconvert-timer nil)
 
@@ -154,17 +161,23 @@ entry whose program is not installed is skipped."
 (defun vellumory-converted-mode ()
   "Read this file (DVI, PostScript, DjVu, an office document) converted to PDF.
 The converter is the first installed one of `vellumory-converters' for its
-extension; the conversion is cached and renewed when the file changes."
+extension; the conversion is cached and renewed when the file changes.
+Without one, MuPDF reads `vellumory-native-office-extensions' itself."
   (interactive)
   (require 'vellumory)
   (let* ((file (or buffer-file-name (user-error "Only files are converted")))
-         (entry (or (vellumory--converter file)
-                    (user-error "No converter for %s is installed (see `vellumory-converters')"
-                                (file-name-nondirectory file))))
-         (target (vellumory--converted-file file entry))
+         (entry (vellumory--converter file))
+         (target (and entry (vellumory--converted-file file entry)))
          (buffer (current-buffer)))
-    (if (file-exists-p target)
-        (vellumory--show-converted target file)
+    (cond
+     ((and (not entry) (vellumory--native-office-p file))
+      ;; Without LibreOffice, MuPDF reads it: better than not at all.
+      (vellumory-mode)
+      (setq-local mode-name (format "Vellumory %s" (upcase (file-name-extension file)))))
+     ((not entry)
+      (user-error "No converter for %s is installed (see `vellumory-converters')" (file-name-nondirectory file)))
+     ((file-exists-p target) (vellumory--show-converted target file))
+     (t
       ;; Said, not written: the buffer's text stays the original's.
       (let ((overlay (make-overlay (point-min) (point-max))))
         (overlay-put overlay 'vellumory-converting t)
@@ -178,13 +191,18 @@ extension; the conversion is cached and renewed when the file changes."
                               (with-current-buffer buffer
                                 (if (not failure) (vellumory--show-converted target file)
                                   (remove-overlays (point-min) (point-max) 'vellumory-converting t)
-                                  (message "Vellumory: %s" failure)))))))))
+                                  (message "Vellumory: %s" failure))))))))))
+
+(defun vellumory--native-office-p (file)
+  "Whether MuPDF reads FILE itself, as one of `vellumory-native-office-extensions'."
+  (member (downcase (or (file-name-extension file) "")) vellumory-native-office-extensions))
 
 ;;;###autoload
 (defun vellumory-converted-extensions ()
-  "Extensions some installed converter reads."
-  (cl-loop for (extensions program) in vellumory-converters
-           when (executable-find program) append extensions))
+  "Extensions some installed converter reads, and office formats MuPDF reads."
+  (delete-dups (append (cl-loop for (extensions program) in vellumory-converters
+                                when (executable-find program) append extensions)
+                       vellumory-native-office-extensions)))
 
 (provide 'vellumory-convert)
 ;;; vellumory-convert.el ends here

@@ -255,6 +255,10 @@ ERT; on the host: the previews of a reopened document are not rendered again)
 ** DONE Doom module :tools vellumory: lazy loading, localleader + which-key,
 doom-modeline segment, popup rules, ESC, real buffers; verified live in a
 reproducible Doom on the user's exact Emacs (keys, wheel, which-key, modeline)
+** DONE MOBI books open through MuPDF; office documents too (docx, xlsx, pptx,
+HWPX: their text) when LibreOffice is not installed, LibreOffice's layout
+still preferred when it is; both reflow with the text-size keys (Lean, ERT,
+and seen in the review)
 ** DONE Annotations changed and moved: colour and opacity (drawn anew), moves
 that keep the appearance another program drew (a foreign highlight stays
 blue where MuPDF would draw it yellow), right and down also on turned pages;

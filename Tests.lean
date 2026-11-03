@@ -634,6 +634,21 @@ def testSignatures : IO Unit := do
     ensure (field restored[0]! "intact" == some true) "and the signature is intact again"
   IO.println "PASS signatures: integrity, trust and its reason, signer; broken by edits, restored by undo"
 
+/-- MOBI books and Office documents open through MuPDF itself: no converter. -/
+def testBooksAndOffice : IO Unit := do
+  ensure (Fixtures.crc32 "123456789".toUTF8 == 0xCBF43926) "CRC-32 check value"
+  let textOf := fun (bytes : ByteArray) (name : String) => do
+    let doc ← Native.openDocumentAs bytes name ""
+    let pages ← Native.pageSizes doc
+    ensure (pages.size ≥ 1) s!"{name}: no pages"
+    Native.pageText doc 0
+  let book ← textOf (Fixtures.mobi "<html><body><h1>Chapter One</h1><p>Call me Ishmael.</p></body></html>") "book.mobi"
+  ensure ((book.splitOn "Chapter One").length > 1 && (book.splitOn "Call me Ishmael.").length > 1) s!"MOBI text: {book}"
+  let report ← textOf (Fixtures.docx #["Quarterly report", "Revenue rose."]) "report.docx"
+  ensure ((report.splitOn "Quarterly report").length > 1 && (report.splitOn "Revenue rose.").length > 1)
+    s!"DOCX text: {report}"
+  IO.println "PASS MOBI and DOCX open through MuPDF, text and pages"
+
 def testForms : IO Unit := do
   let some fixture ← IO.getEnv "VELLUMORY_FORM_FIXTURE"
     | throw <| IO.userError "VELLUMORY_FORM_FIXTURE is not set (nix develop provides it)"
@@ -1681,6 +1696,7 @@ def main (args : List String) : IO UInt32 := do
       testStampAndEncryption
       testAnnotations
       testAnnotationStyleAndMove
+      testBooksAndOffice
       testSignatures
       testForms
       return 0

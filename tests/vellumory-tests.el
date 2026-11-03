@@ -2553,6 +2553,40 @@ share of it; in a PDF they zoom."
               (should (> vellumory--zoom zoom))))
         (kill-buffer reader)))))
 
+(ert-deftest vellumory-mobi-and-office-without-converters ()
+  "MOBI books visit as documents; office documents too when no converter is
+installed, MuPDF reading them itself."
+  (let* ((program (getenv "VELLUMORY_TEST_PROGRAM"))
+         (mobi (getenv "VELLUMORY_TEST_MOBI")) (docx (getenv "VELLUMORY_TEST_DOCX"))
+         (directory (make-temp-file "vellumory-books-" t))
+         (vellumory-program program)
+         (vellumory-state-directory (expand-file-name "state" directory))
+         (vellumory-cache-directory (expand-file-name "cache" directory))
+         (vellumory-converters nil)
+         (auto-mode-alist auto-mode-alist) (magic-mode-alist magic-mode-alist)
+         (file-name-handler-alist file-name-handler-alist))
+    (skip-unless (and program mobi docx))
+    (require 'vellumory-convert)
+    (vellumory-install)
+    (should (eq (assoc-default "x.mobi" auto-mode-alist #'string-match-p) 'vellumory-mode))
+    (should (eq (assoc-default "x.docx" auto-mode-alist #'string-match-p) 'vellumory-converted-mode))
+    (unwind-protect
+        (pcase-dolist (`(,source ,name ,text) `((,mobi "book.mobi" "Call me Ishmael")
+                                                (,docx "report.docx" "Revenue rose")))
+          (let ((file (expand-file-name name directory)) buffer)
+            (copy-file source file)
+            (setq buffer (find-file-noselect file))
+            (unwind-protect
+                (with-current-buffer buffer
+                  (should (derived-mode-p 'vellumory-mode))
+                  (should (vellumory-test--wait (lambda () vellumory--pages)))
+                  (let (result)
+                    (vellumory--rpc "text" '((page . 0)) (lambda (reply) (setq result (alist-get 'result reply))))
+                    (should (vellumory-test--wait (lambda () result)))
+                    (should (string-match-p text (alist-get 'text result)))))
+              (kill-buffer buffer))))
+      (delete-directory directory t))))
+
 (ert-deftest vellumory-converted-formats ()
   "DVI, PostScript and DjVu, as DocView reads them, through a conversion to PDF:
 read like any document, the conversion cached, edits refused, the original's

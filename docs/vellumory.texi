@@ -310,9 +310,9 @@ Vellumory is a document reader for GNU Emacs.  It shows PDF pages in an
 ordinary Emacs buffer@comma{} sharp and continuous@comma{} and keeps up while you
 scroll.  When the pages are too wide for your window@comma{} or you would simply
 rather read text@comma{} its reading mode reflows the document into one column
-of text that fits the window.  It also reads XPS@comma{} EPUB@comma{} CBZ comic books and FB2 books@comma{} and@comma{}
-through converters you may already have installed@comma{} DVI@comma{} PostScript@comma{} DjVu
-and office documents.
+of text that fits the window.  It also reads XPS@comma{} CBZ comic books@comma{} the
+e-book formats EPUB@comma{} MOBI and FB2@comma{} office documents@comma{} and@comma{} through
+converters you may already have installed@comma{} DVI@comma{} PostScript and DjVu.
 
 It is made of three parts that work together:
 
@@ -2070,16 +2070,18 @@ turns on its own mode instead.
 
 @cindex formats
 @cindex EPUB
+@cindex MOBI
 @cindex XPS
 @cindex CBZ
 @cindex FB2
 
 MuPDF reads several formats besides PDF@comma{} and so does Vellumory: XPS and
-OpenXPS@comma{} CBZ comic book archives@comma{} and the e-book formats EPUB and FB2.
-@code{vellumory-file-extensions} lists the extensions that @code{vellumory-install}
-associates.
+OpenXPS@comma{} CBZ comic book archives@comma{} and the e-book formats EPUB@comma{} MOBI and
+FB2.  @code{vellumory-file-extensions} lists the extensions that
+@code{vellumory-install} associates.
 
-EPUB and FB2 books have no fixed pages.  Vellumory lays them out on pages
+EPUB@comma{} MOBI and FB2 books have no fixed pages@comma{} nor have office documents
+MuPDF reads (see below).  Vellumory lays them out on pages
 of @code{vellumory-reflow-page-size} points (450 × 600 by default)@comma{} with text of
 @code{vellumory-reflow-text-size} points (11 by default)@comma{} and applies the CSS file
 @code{vellumory-reflow-stylesheet} if you set one.  The text-scale keys change the
@@ -2116,10 +2118,16 @@ Like DocView@comma{} Vellumory reads some formats by converting them to PDF:
 @end multitable
 
 @code{vellumory-converters} holds these rules@comma{} and you can change them.  A format
-is associated only when its converter is installed.  PostScript is left
-to @code{ps-mode}@comma{} where it is usually edited: read a PostScript file with @code{M-x
-vellumory-converted-mode} (@code{vellumory-converted-not-visited} lists the formats
-treated this way).
+is associated only when its converter is installed.  Office documents
+are the exception: without LibreOffice@comma{} MuPDF reads Word@comma{} Excel and
+PowerPoint files (docx@comma{} xlsx@comma{} pptx) and HWPX itself
+(@code{vellumory-native-office-extensions}).  LibreOffice lays a document out
+as an office suite does.  MuPDF reads its text (paragraphs@comma{} headings and
+footnotes@comma{} a spreadsheet's cells as tables@comma{} the text of slides) and flows
+it into pages@comma{} as it does an e-book; pictures and the original page layout
+are left out.  PostScript is left to @code{ps-mode}@comma{} where it is usually
+edited: read a PostScript file with @code{M-x vellumory-converted-mode}
+(@code{vellumory-converted-not-visited} lists the formats treated this way).
 
 @table @asis
 @item @kbd{M-x vellumory-converted-mode}
@@ -4859,7 +4867,7 @@ A small example:
 @defopt vellumory-file-extensions
 File extensions that
   @code{vellumory-install} opens in Vellumory.  Default: @code{("pdf" "xps" "oxps"
-  "cbz" "fb2" "epub")}.
+  "cbz" "fb2" "epub" "mobi")}.
 @end defopt
 
 @defopt vellumory-converters
@@ -4870,6 +4878,12 @@ How other formats become PDF: a list
   program is not installed is skipped.  Default: DVI with dvipdfmx@comma{}
   PostScript and EPS with ps2pdf@comma{} DjVu with ddjvu@comma{} and odt@comma{} ods@comma{} odp@comma{} odg@comma{}
   doc@comma{} docx@comma{} xls@comma{} xlsx@comma{} ppt@comma{} pptx and rtf with LibreOffice's soffice.
+@end defopt
+
+@defopt vellumory-native-office-extensions
+Office formats MuPDF
+  reads itself when no converter for them is installed.  Default: @code{("docx"
+  "xlsx" "pptx" "hwpx")}.
 @end defopt
 
 @defopt vellumory-converted-not-visited

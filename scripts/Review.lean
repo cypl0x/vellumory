@@ -168,7 +168,12 @@ def testEmacs (p : Parsed) : IO UInt32 := do
   IO.FS.withTempDir fun dir => do
     let pdf := dir / "reader.pdf"
     IO.FS.writeFile pdf Fixtures.reader
+    IO.FS.writeBinFile (dir / "book.mobi")
+      (Fixtures.mobi "<html><body><h1>Chapter One</h1><p>Call me Ishmael.</p></body></html>")
+    IO.FS.writeBinFile (dir / "report.docx") (Fixtures.docx #["Quarterly report", "Revenue rose."])
     let result ← Shell.run <| Shell.withEnv "VELLUMORY_TEST_PDF" pdf.toString <|
+      Shell.withEnv "VELLUMORY_TEST_MOBI" (dir / "book.mobi").toString <|
+      Shell.withEnv "VELLUMORY_TEST_DOCX" (dir / "report.docx").toString <|
       Shell.withEnv "VELLUMORY_TEST_PROGRAM" (root / ".lake/build/bin/vellumory").toString <|
       Shell.withEnv "XDG_CACHE_HOME" (dir / "cache").toString <|
       Shell.checked (command% emacs ["--batch", "-Q", "-L", "lisp", "-l", "tests/vellumory-tests.el",
