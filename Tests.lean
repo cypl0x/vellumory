@@ -184,10 +184,17 @@ def testValidateAndOcr : IO Unit := do
     let before ← Native.pageText (← Native.openDocument (← IO.FS.readBinFile scan) "") 0
     ensure (!(before.splitOn "Continuous").length > 1) "the scan must start without text"
     let store : Edit.Store := { root := dir / "store" }
-    let _ ← Edit.apply store scan (.ocr "eng" "skip")
+    let ocr ← Edit.apply store scan (.ocr "eng" "skip")
+    let label := ((ocr.getObjValAs? Json "node").toOption.bind (·.getObjValAs? String "label" |>.toOption)).getD ""
     let after ← Native.pageText (← Native.openDocument (← IO.FS.readBinFile scan) "") 0
     ensure ((after.splitOn "Continuous reading").length > 1 && (after.splitOn "raster strip").length > 1)
-      s!"OCR text missing: {after.take 200}"
+      s!"OCR text missing ({label}): {after.take 200}"
+    -- A page tesseract gave up on comes back without text, and ocrmypdf
+    -- succeeds; its log (ocrmypdf 17.11, --tesseract-timeout 0.01) names it.
+    ensure (Edit.ocrSkipped "Starting processing with 3 workers concurrently\n    1 [tesseract] took too long \
+      to OCR - skipping\n   12 [tesseract] took too long to OCR - skipping\nPostprocessing...\n" == #[1, 12])
+      "pages tesseract gave up on"
+    ensure (Edit.ocrSkipped "Parsing 1 pages with HocrParser\nPostprocessing...\n" == #[]) "no page given up on"
     let _ ← Edit.undo store scan
     ensure ((← IO.FS.readFile scan) == scannedPdf w h gray) "undo restores the scan byte for byte"
   IO.println "PASS veraPDF validation report, clauses, pages, batches; OCR text layer as an undoable edit"

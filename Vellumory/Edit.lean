@@ -308,7 +308,8 @@ def Operation.qpdfArgs (op : Operation) (input output : String) (pdfa : Option N
       s!"@{output}.args"] ++ deterministic
   | .ocr languages mode =>
     let flag := match mode with | "redo" => "--redo-ocr" | "force" => "--force-ocr" | _ => "--skip-text"
-    #[flag, "--language", languages, "--output-type", "pdf", "--quiet", input, output]
+    -- Not --quiet: it hides the warning about a page tesseract gave up on (ocrSkipped).
+    #[flag, "--language", languages, "--output-type", "pdf", input, output]
   | .syntax qdf => #[qdf, output, objectStreams, "--compress-streams=y"] ++ deterministic
   | .metadata .. => #[input, s!"--update-from-json={output}.update.json", output, s!"@{output}.args"] ++
       deterministic
@@ -557,13 +558,29 @@ def summary (h : History.History) (changed : Bool) : Json :=
   .mkObj [("changed", .bool changed), ("head", Vellumory.toJson h.head),
           ("node", nodeJson h h.head), ("nodes", Vellumory.toJson h.nodes.size)]
 
-def runTool (program : String) (args : Array String) : IO Unit := do
-  let result ← Shell.run <| Shell.capture { program, args }
+/-- The pages, one-based, that tesseract gave up on, from ocrmypdf's log: it
+    copies such a page without text, warns and still succeeds (ocrmypdf 17.11,
+    after --tesseract-timeout, 180 s by default). -/
+def ocrSkipped (log : String) : Array Nat :=
+  (log.splitOn "\n").toArray.filterMap fun line =>
+    match (toString line.trimAscii).splitOn " [tesseract] took too long to OCR" with
+    | [page, _] => page.toNat?
+    | _ => none
+
+def runTool (program : String) (args : Array String) : IO IO.Process.Output := do
+  -- tesseract's OpenMP threads wait for each other by spinning: beside other
+  -- work on four cores, the OCR test's page took 56 s on three threads and 3.4 s
+  -- on one (0.8 s and 0.9 s idle; tesseract 5.5.3). Unless OMP_THREAD_LIMIT is
+  -- set, ocrmypdf gives a short document's pages up to three, a long one's one.
+  let single := program == Tools.ocrmypdf && !(← IO.getEnv "OMP_THREAD_LIMIT").any String.isNat
+  let result ← Shell.run <| (if single then Shell.withEnv "OMP_THREAD_LIMIT" "1" else id) <|
+    Shell.capture { program, args }
   -- qpdf: 0 clean, 3 warnings; ocrmypdf: 0 success. Both produced a usable file.
   unless result.exitCode == 0 || (program == Tools.qpdf && result.exitCode == 3) do
     throw <| IO.userError s!"{program} failed ({result.exitCode}): {result.stderr.trimAscii}"
+  return result
 
-def runQpdf (args : Array String) : IO Unit := runTool Tools.qpdf args
+def runQpdf (args : Array String) : IO Unit := discard <| runTool Tools.qpdf args
 
 /-- Apply `op` to the document at `path`, recording it in its history. -/
 def apply (s : Store) (path : FilePath) (op : Operation) : IO Json := do
@@ -575,13 +592,16 @@ def apply (s : Store) (path : FilePath) (op : Operation) : IO Json := do
     IO.ofExcept (op.validate (← pageCount bytes (match op with | .decrypt password => password | _ => "")))
     privateDirectory (s.root / "tmp")
     let output := s.root / "tmp" / s!"edit-{← nonce}.pdf"
+    let skipped ← IO.mkRef (#[] : Array Nat)
     try
       let scratch := s.root / "tmp" / s!"scratch-{← nonce}.pdf"
       try
         let input := (s.object head.hash).toString
         for step in op.steps input output.toString scratch.toString (← Metadata.pdfaPart input) do
           match step with
-          | .tool program args => runTool program args
+          | .tool program args =>
+            let result ← runTool program args
+            if program == Tools.ocrmypdf then skipped.modify (· ++ ocrSkipped result.stderr)
           | .native run => run
       finally
         for file in #[scratch.toString] ++ sideFiles output.toString do
@@ -591,8 +611,13 @@ def apply (s : Store) (path : FilePath) (op : Operation) : IO Json := do
       let pages ← pageCount result (match op with | .encrypt user .. => user | _ => "")
       let hash ← s.put result
       if hash == head.hash then return summary h false
+      let skipped ← skipped.get
       let label := match op with
         | .compress => s!"{op.label} ({bytes.size} → {result.size} bytes)"
+        -- Kept, and said: recognizing again in skip mode retries only those pages.
+        | .ocr .. => if skipped.isEmpty then s!"{op.label} ({pages} pages)" else
+          s!"{op.label} ({pages} pages; {if skipped.size == 1 then "page" else "pages"} \
+            {", ".intercalate (skipped.toList.map toString)} timed out, recognize again to retry)"
         | _ => s!"{op.label} ({pages} pages)"
       let h := h.commit hash op.toJson (← nowMs) label
       saveHistory s h

@@ -2255,7 +2255,12 @@ removed attachment leaves nothing behind in the file.
   invisible, searchable text layer.  You give the Tesseract languages
   (=eng=, or =deu+eng= for two) and what to do with pages that already have
   text: =skip= them, =redo= an earlier OCR layer, or =force= recognition by
-  rasterizing every page first.  This can take a while.
+  rasterizing every page first.  This can take a while.  Tesseract reads
+  each page on one thread, because its threads slow each other down badly
+  on a busy machine; set =OMP_THREAD_LIMIT= in Emacs's environment to give
+  it more.  A page Tesseract gives up on (after three minutes) stays without
+  text: the history entry names it, and recognizing again with =skip= reads
+  only the pages still without text.
 - Key: e f :: Fill in the form (see [[*Filling in forms]]).
 
 ** Compression and encryption

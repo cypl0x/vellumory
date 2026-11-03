@@ -3534,7 +3534,12 @@ Recognize text with ocrmypdf@comma{} adding an
   invisible@comma{} searchable text layer.  You give the Tesseract languages
   (@samp{eng}@comma{} or @samp{deu+eng} for two) and what to do with pages that already have
   text: @samp{skip} them@comma{} @samp{redo} an earlier OCR layer@comma{} or @samp{force} recognition by
-  rasterizing every page first.  This can take a while.
+  rasterizing every page first.  This can take a while.  Tesseract reads
+  each page on one thread@comma{} because its threads slow each other down badly
+  on a busy machine; set @samp{OMP_THREAD_LIMIT} in Emacs's environment to give
+  it more.  A page Tesseract gives up on (after three minutes) stays without
+  text: the history entry names it@comma{} and recognizing again with @samp{skip} reads
+  only the pages still without text.
 @item @kbd{e f}
 @kindex e f
 Fill in the form (see @ref{Filling in forms}).

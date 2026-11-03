@@ -410,6 +410,14 @@ the flake through a NixOS configuration.  The doctor reports every check
 passing; a 5019-page book opens; the manual is found beside the worker; on a
 copy of a paper, rotate, compress, undo and rotate back give a history tree
 with a branch, read from its buffer
+** DONE OCR under load (reported from the author's laptop, 2026-11-03): the
+OCR check failed once in the CI of the laptop's configuration, beside Rust and
+Emacs builds, with no text at all.  ocrmypdf gives a one-page document three
+Tesseract threads, and gives up on a page after 180 s, copying it without
+text and exiting 0; =--quiet= hid its warning.  Reproduced on four cores
+shared with 100 busy loops: 191 s, no text, exit 0; on one thread 43 s and
+the text.  Tesseract now runs on one thread unless =OMP_THREAD_LIMIT= is set,
+and a page it gives up on is named in the history entry
 ** DONE Memory measured against Evince, Papers and Okular (2026-10-30, three
 runs on one paper, byte-compiled, twice): 149–172 MiB with Emacs itself
 (128–145 MiB proportional, PSS), from
