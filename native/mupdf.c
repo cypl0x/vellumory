@@ -2430,6 +2430,8 @@ lean_obj_res vellumory_native_annotations(b_lean_obj_arg handle, uint32_t number
                 jb_open(ctx, &b, '[');
                 for (int i = 0; i < pdf_array_len(ctx, color) && i < 4; ++i) jb_num(ctx, &b, pdf_array_get_real(ctx, color, i));
                 jb_close(ctx, &b, ']');
+                jb_key(ctx, &b, "opacity");
+                jb_num(ctx, &b, pdf_annot_opacity(ctx, a));
                 jb_key(ctx, &b, "quads");
                 jb_open(ctx, &b, '[');
                 if (pdf_annot_has_quad_points(ctx, a)) {
@@ -2558,6 +2560,72 @@ lean_obj_res vellumory_native_annot_change(b_lean_obj_arg input, b_lean_obj_arg 
         if (remove) pdf_delete_annot(ctx, page, annot);
         else {
             pdf_set_annot_contents(ctx, annot, lean_string_cstr(contents));
+            pdf_set_annot_modification_date(ctx, annot, (int64_t)time);
+            pdf_update_annot(ctx, annot);
+        }
+        annot_save(ctx, doc, lean_string_cstr(output));
+    }
+    fz_always(ctx) {
+        fz_drop_page(ctx, (fz_page *)page);
+        pdf_drop_document(ctx, doc);
+    }
+    fz_catch(ctx) snprintf(message, sizeof message, "%s", fz_convert_error(ctx, NULL));
+    fz_drop_context(ctx);
+    return message[0] ? failure(message) : lean_io_result_mk_ok(lean_box(0));
+}
+
+/* Add D to every x, y pair of ARRAY, or of each array in it (an InkList). */
+static void shift_pairs(fz_context *ctx, pdf_obj *array, fz_point d) {
+    int n = pdf_array_len(ctx, array);
+    for (int i = 0; i < n; ++i)
+        if (pdf_is_array(ctx, pdf_array_get(ctx, array, i))) shift_pairs(ctx, pdf_array_get(ctx, array, i), d);
+    for (int i = 0; i + 1 < n; i += 2) {
+        if (!pdf_is_number(ctx, pdf_array_get(ctx, array, i))) continue;
+        pdf_array_put_real(ctx, array, i, pdf_array_get_real(ctx, array, i) + d.x);
+        pdf_array_put_real(ctx, array, i + 1, pdf_array_get_real(ctx, array, i + 1) + d.y);
+    }
+}
+
+/* Restyle one annotation, by object number: COLOR (3 numbers, or none to
+   keep) and OPACITY (0 to 1, or negative to keep), with a new appearance.
+   Or move it by DX, DY points (page space, y down): every coordinate it has
+   shifts, its popup's too, and its appearance stream stays as its author's
+   tool drew it, since readers map it onto the moved rectangle (ISO 32000-2
+   12.5.5). Its setters are not used for that: they would have MuPDF draw a
+   new appearance in place of the original. */
+lean_obj_res vellumory_native_annot_modify(b_lean_obj_arg input, b_lean_obj_arg output, uint32_t number,
+        uint32_t object, b_lean_obj_arg color, double opacity, double dx, double dy, double time,
+        lean_obj_arg world) {
+    (void)world;
+    fz_context *ctx = fz_new_context(NULL, NULL, FZ_STORE_DEFAULT);
+    if (!ctx) return failure("Cannot create MuPDF context");
+    pdf_document *doc = NULL;
+    pdf_page *page = NULL;
+    char message[256] = "";
+    fz_var(doc); fz_var(page);
+    fz_try(ctx) {
+        doc = pdf_open_document(ctx, lean_string_cstr(input));
+        if ((int)number >= pdf_count_pages(ctx, doc)) fz_throw(ctx, FZ_ERROR_ARGUMENT, "Page outside document");
+        page = pdf_load_page(ctx, doc, (int)number);
+        pdf_annot *annot = annot_find(ctx, page, (int)object);
+        pdf_obj *obj = pdf_annot_obj(ctx, annot);
+        if (dx != 0 || dy != 0) {
+            fz_matrix ctm;
+            pdf_page_transform(ctx, page, NULL, &ctm);
+            fz_point d = fz_transform_vector(fz_make_point((float)dx, (float)dy), fz_invert_matrix(ctm));
+            pdf_obj *keys[] = {PDF_NAME(Rect), PDF_NAME(QuadPoints), PDF_NAME(L),
+                                            PDF_NAME(Vertices), PDF_NAME(CL), PDF_NAME(InkList)};
+            for (size_t i = 0; i < nelem(keys); ++i) shift_pairs(ctx, pdf_dict_get(ctx, obj, keys[i]), d);
+            shift_pairs(ctx, pdf_dict_getp(ctx, obj, "Popup/Rect"), d);
+            pdf_dict_put_date(ctx, obj, PDF_NAME(M), (int64_t)time);
+        }
+        if (lean_sarray_size(color) == 3 || opacity >= 0) {
+            if (lean_sarray_size(color) == 3) {
+                const double *c = lean_float_array_cptr(color);
+                float rgb[3] = {(float)c[0], (float)c[1], (float)c[2]};
+                pdf_set_annot_color(ctx, annot, 3, rgb);
+            }
+            if (opacity >= 0) pdf_set_annot_opacity(ctx, annot, (float)opacity);
             pdf_set_annot_modification_date(ctx, annot, (int64_t)time);
             pdf_update_annot(ctx, annot);
         }

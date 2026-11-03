@@ -1519,3 +1519,67 @@ it (`scroll-other-window' follows the remap since Emacs 28), and by
         (with-selected-window reader
           (vellumory-first-page)
           (vellumory-gui--settle))))))
+
+(defun vellumory-gui--posn-over (window page x y)
+  "A mouse position in WINDOW over point X, Y of zero-based PAGE, or nil.
+Found by correcting a probe: points map linearly to the window's pixels.
+Checked: the reader reads it back as that point, within 3 points."
+  (with-current-buffer (window-buffer window)
+    (let ((k (vellumory--points-per-pixel page)) (wx 100) (wy 100) here)
+      (dotimes (_ 3)
+        (when-let* ((found (vellumory--event-location (posn-at-x-y wx wy window)))
+                    ((= (car found) page)))
+          (setq wx (round (+ wx (/ (- x (nth 1 found)) k))) wy (round (+ wy (/ (- y (nth 2 found)) k))))))
+      (let ((posn (posn-at-x-y wx wy window)))
+        (setq here (vellumory--event-location posn))
+        (and here (= (car here) page) (< (abs (- (nth 1 here) x)) 3) (< (abs (- (nth 2 here) y)) 3) posn)))))
+
+(ert-deftest vellumory-gui-dragging-a-note-moves-it ()
+  "A note dragged on the page lands where it is dropped, the place it
+would land drawn meanwhile: one recorded edit, on a copy of the document."
+  (skip-unless (display-graphic-p))
+  (let* ((window (get-buffer-window "reader.pdf" t))
+         (original (window-buffer window))
+         (dir (make-temp-file "vellumory-drag-" t))
+         (file (expand-file-name "notes.pdf" dir))
+         (process-environment (cons (concat "VELLUMORY_STORE=" (expand-file-name "store" dir)) process-environment))
+         (reader nil) (seen nil)
+         (record (lambda (&rest _) (when vellumory--annotation-drag (push vellumory--annotation-drag seen)))))
+    (unwind-protect
+        (progn
+          (copy-file (buffer-file-name original) file)
+          (set-file-modes file #o644)
+          (setq reader (find-file-noselect file))
+          (set-window-buffer window reader)
+          (with-selected-window window
+            (should (vellumory-gui--wait-for (lambda () vellumory--hash)))
+            (vellumory-first-page)
+            (vellumory-gui--settle)
+            (let ((before vellumory--hash))
+              (vellumory-add-note '(0 450 300) "Drag me")
+              (should (vellumory-gui--wait-for (lambda () (not (equal before vellumory--hash))) 60)))
+            (vellumory-gui--settle)
+            (should (vellumory-gui--wait-for (lambda () (> (length (vellumory--ensure-annotations 0)) 0))))
+            (vellumory-gui--settle)
+            (let* ((rect (alist-get 'rect (aref (vellumory--ensure-annotations 0) 0)))
+                   (cx (/ (+ (aref rect 0) (aref rect 2)) 2)) (cy (/ (+ (aref rect 1) (aref rect 3)) 2))
+                   (from (vellumory-gui--posn-over window 0 cx cy))
+                   (via (vellumory-gui--posn-over window 0 (+ cx 30) (+ cy 20)))
+                   (to (vellumory-gui--posn-over window 0 (+ cx 60) (+ cy 40)))
+                   (before vellumory--hash))
+              (should (and from via to))
+              ;; The press reads the moves and the release that follow it.
+              (setq unread-command-events (list `(mouse-movement ,via) `(mouse-movement ,to) `(drag-mouse-1 ,from ,to)))
+              (advice-add 'vellumory--refresh :before record)
+              (unwind-protect (vellumory-mouse-press `(down-mouse-1 ,from))
+                (advice-remove 'vellumory--refresh record))
+              (should (equal (car (car seen)) 0))
+              (should-not vellumory--annotation-drag)
+              (should (vellumory-gui--wait-for (lambda () (not (equal before vellumory--hash))) 60))
+              (should (vellumory-gui--wait-for (lambda () (vectorp (vellumory--ensure-annotations 0)))))
+              (let ((moved (alist-get 'rect (aref (vellumory--ensure-annotations 0) 0))))
+                (should (< (abs (- (aref moved 0) (aref rect 0) 60)) 3))
+                (should (< (abs (- (aref moved 1) (aref rect 1) 40)) 3))))))
+      (set-window-buffer window original)
+      (vellumory-gui--kill reader)
+      (delete-directory dir t))))

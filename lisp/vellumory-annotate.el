@@ -24,11 +24,14 @@
 ;; `a q' squiggly underline), or click to place a note (`a n').  The marked
 ;; text becomes the annotation's contents unless a comment is given (with a
 ;; prefix argument), so the annotation reads well to screen readers too.
-;; `a l' lists every annotation: RET shows it, `e' edits its text, `d'
-;; deletes it.  Hovering an annotation on the page shows its text.
+;; `a l' lists every annotation: RET shows it, `e' edits its text, `c' and
+;; `o' change its colour and opacity, `d' deletes it.  Hovering an annotation
+;; on the page shows its text; dragging a note moves it, and the right-click
+;; menu changes, moves or deletes any annotation.
 
 ;;; Code:
 (require 'cl-lib)
+(require 'color)
 (require 'tabulated-list)
 
 (defvar vellumory--selection)
@@ -52,6 +55,7 @@
 (declare-function vellumory--tile-right "vellumory" (tile))
 (declare-function vellumory--row-top "vellumory" (row))
 (declare-function vellumory--row-bottom "vellumory" (row))
+(declare-function vellumory--rect-quad "vellumory-select" (x0 y0 x1 y1))
 
 (defgroup vellumory-annotate nil "Annotations." :group 'vellumory)
 
@@ -179,6 +183,122 @@ With a prefix argument, ask for a COMMENT."
                   areas))))
       areas)))
 
+;;;; Changing: text, colour, opacity, place
+
+(defcustom vellumory-annotation-movable-types '("Text" "FreeText" "FileAttachment" "Stamp" "Caret" "Sound")
+  "Types of annotation that dragging on the page moves.
+Dragging elsewhere, such as over highlighted text, selects text; the
+right-click menu moves any annotation."
+  :type '(repeat string))
+
+(defvar-local vellumory--annotation-drag nil "(PAGE . QUAD) where a dragged annotation would land.")
+
+(defun vellumory--annotation-at (page x y)
+  "The annotation on zero-based PAGE whose rectangle holds point X, Y, or nil.
+The one drawn last, on top, wins; it carries its `page'.  Annotations not
+known yet count as none."
+  (let (found)
+    (seq-doseq (annotation (vellumory--ensure-annotations page))
+      (let ((rect (alist-get 'rect annotation)))
+        (when (and (<= (aref rect 0) x (aref rect 2)) (<= (aref rect 1) y (aref rect 3)))
+          (setq found annotation))))
+    (and found (cons (cons 'page page) found))))
+
+(defun vellumory--movable-annotation-at (location)
+  "The annotation at LOCATION, (PAGE X Y), when dragging it moves it."
+  (when-let* ((annotation (apply #'vellumory--annotation-at location)))
+    (and (member (alist-get 'type annotation) vellumory-annotation-movable-types) annotation)))
+
+(defun vellumory--annotation-change (annotation op &rest fields)
+  "Record OP, an annotation edit with FIELDS (an alist), for ANNOTATION."
+  (vellumory--edit `((op . ,op) (page . ,(1+ (alist-get 'page annotation))) (object . ,(alist-get 'object annotation))
+                     ,@fields (time . ,(floor (float-time))))))
+
+(defun vellumory--annotation-color-name (annotation)
+  "ANNOTATION's colour as #RRGGBB, or nil when it has none."
+  (let ((color (alist-get 'color annotation)))
+    (when (= (length color) 3)
+      (apply #'format "#%02x%02x%02x" (mapcar (lambda (c) (round (* 255 c))) color)))))
+
+(defun vellumory-annotation-set-text (annotation contents)
+  "Replace the text of ANNOTATION with CONTENTS."
+  (vellumory--annotation-change annotation "annotation-edit" `(contents . ,contents)))
+
+(defun vellumory--color-rgb (color)
+  "COLOR, a name or #RRGGBB, as three numbers from 0 to 1, or nil.
+Exact on a terminal too, where `color-name-to-rgb' gives the nearest colour
+the terminal shows."
+  (when-let* ((values (tty-color-standard-values (downcase (string-replace " " "" color)))))
+    (mapcar (lambda (value) (/ value 65535.0)) values)))
+
+(defun vellumory-annotation-set-color (annotation color)
+  "Give ANNOTATION the colour COLOR, a name or #RRGGBB; it is drawn anew."
+  (vellumory--annotation-change annotation "annotation-style"
+                                `(color . ,(vconcat (or (vellumory--color-rgb color) (user-error "No colour %s" color))))))
+
+(defun vellumory-annotation-set-opacity (annotation percent)
+  "Make ANNOTATION PERCENT opaque (100: not see-through); it is drawn anew."
+  (unless (<= 0 percent 100) (user-error "Opacity is a percentage from 0 to 100"))
+  (vellumory--annotation-change annotation "annotation-style" '(color . []) `(opacity . ,(/ percent 100.0))))
+
+(defun vellumory--read-annotation-color (annotation)
+  "Read a colour for ANNOTATION, its current one the default."
+  (let ((current (vellumory--annotation-color-name annotation)))
+    (read-color (format-prompt "Colour" current) nil nil nil)))
+
+(defun vellumory--read-annotation-opacity (annotation)
+  "Read an opacity in percent for ANNOTATION, its current one the default."
+  (read-number "Opacity (percent): " (round (* 100 (or (alist-get 'opacity annotation) 1)))))
+
+(defun vellumory--annotation-moved-within (annotation dx dy)
+  "DX and DY, limited so ANNOTATION's rectangle stays on its page."
+  (let* ((rect (alist-get 'rect annotation))
+         (size (aref vellumory--pages (alist-get 'page annotation)))
+         (width (alist-get 'width size)) (height (alist-get 'height size)))
+    (list (max (- (aref rect 0)) (min dx (- width (aref rect 2))))
+          (max (- (aref rect 1)) (min dy (- height (aref rect 3)))))))
+
+(defun vellumory--drag-annotation (annotation start)
+  "Move ANNOTATION by dragging from START, (PAGE X Y), until the button is up.
+Where it would land is shown while dragging; a click without a drag
+changes nothing."
+  (pcase-let ((`(,page ,x0 ,y0) start) (rect (alist-get 'rect annotation)) (dx 0) (dy 0) (shown 0))
+    (unwind-protect
+        (track-mouse
+          (cl-loop for next = (read-event)
+                   while (mouse-movement-p next)
+                   do (when-let* ((here (vellumory--event-location (event-start next))))
+                        (when (= (car here) page)
+                          (pcase-setq `(,dx ,dy) (vellumory--annotation-moved-within
+                                                  annotation (- (nth 1 here) x0) (- (nth 2 here) y0)))
+                          (setq vellumory--annotation-drag
+                                (cons page (vellumory--rect-quad (+ (aref rect 0) dx) (+ (aref rect 1) dy)
+                                                                 (+ (aref rect 2) dx) (+ (aref rect 3) dy))))
+                          ;; A redraw at most every 30 ms: the pointer outruns the renderer.
+                          (when (> (- (float-time) shown) 0.03)
+                            (setq shown (float-time))
+                            (vellumory--refresh t))))))
+      (when vellumory--annotation-drag
+        (setq vellumory--annotation-drag nil)
+        (vellumory--refresh t)))
+    (when (> (+ (abs dx) (abs dy)) 1)
+      (vellumory--annotation-change annotation "annotation-move" `(dx . ,dx) `(dy . ,dy)))))
+
+(defun vellumory-move-annotation (annotation)
+  "Move ANNOTATION: its upper left corner goes where the next click lands."
+  (let ((window (selected-window)) location)
+    (while (not location)
+      (let ((event (read-event (format "Click where the %s goes" (downcase (alist-get 'type annotation))))))
+        (when (and (memq (car-safe event) '(mouse-1 down-mouse-1))
+                   (eq window (posn-window (event-start event))))
+          (setq location (vellumory--event-location (event-start event))))))
+    (unless (= (car location) (alist-get 'page annotation))
+      (user-error "An annotation stays on its page"))
+    (let ((rect (alist-get 'rect annotation)))
+      (vellumory--annotation-change annotation "annotation-move"
+                                    (cons 'dx (- (nth 1 location) (aref rect 0)))
+                                    (cons 'dy (- (nth 2 location) (aref rect 1)))))))
+
 ;;;; The list
 
 (defvar-local vellumory--annotation-list-source nil)
@@ -234,14 +354,27 @@ With a prefix argument, ask for a COMMENT."
       (vellumory--restore-position `((page . ,(alist-get 'page a)) (y . ,(max 0 (- (aref (alist-get 'rect a) 1) 24)))))
       (vellumory--refresh t))))
 
+(defun vellumory--annotation-list-change (change &rest args)
+  "Call CHANGE with the annotation on this line and ARGS in its document.
+The list is read again once the edit has had time to land."
+  (let ((a (vellumory--annotation-at-point)) (list (current-buffer)))
+    (with-current-buffer vellumory--annotation-list-source (apply change a args))
+    (run-at-time 1.5 nil (lambda () (when (buffer-live-p list) (with-current-buffer list (vellumory-annotation-list-refresh)))))))
+
 (defun vellumory-annotation-list-edit (contents)
   "Replace the text of the annotation on this line with CONTENTS."
   (interactive (list (read-string "Text: " (alist-get 'contents (vellumory--annotation-at-point)))))
-  (let ((a (vellumory--annotation-at-point)) (list (current-buffer)))
-    (with-current-buffer vellumory--annotation-list-source
-      (vellumory--edit `((op . "annotation-edit") (page . ,(1+ (alist-get 'page a))) (object . ,(alist-get 'object a))
-                         (contents . ,contents) (time . ,(floor (float-time))))))
-    (run-at-time 1.5 nil (lambda () (when (buffer-live-p list) (with-current-buffer list (vellumory-annotation-list-refresh)))))))
+  (vellumory--annotation-list-change #'vellumory-annotation-set-text contents))
+
+(defun vellumory-annotation-list-color (color)
+  "Give the annotation on this line the colour COLOR."
+  (interactive (list (vellumory--read-annotation-color (vellumory--annotation-at-point))))
+  (vellumory--annotation-list-change #'vellumory-annotation-set-color color))
+
+(defun vellumory-annotation-list-opacity (percent)
+  "Make the annotation on this line PERCENT opaque."
+  (interactive (list (vellumory--read-annotation-opacity (vellumory--annotation-at-point))))
+  (vellumory--annotation-list-change #'vellumory-annotation-set-opacity percent))
 
 (defun vellumory-annotation-list-delete ()
   "Delete the annotation on this line (an undoable edit)."
@@ -257,6 +390,8 @@ With a prefix argument, ask for a COMMENT."
   (let ((map (make-sparse-keymap)))
     (keymap-set map "RET" #'vellumory-annotation-list-visit)
     (keymap-set map "e" #'vellumory-annotation-list-edit)
+    (keymap-set map "c" #'vellumory-annotation-list-color)
+    (keymap-set map "o" #'vellumory-annotation-list-opacity)
     (keymap-set map "d" #'vellumory-annotation-list-delete)
     (keymap-set map "g" #'vellumory-annotation-list-refresh)
     map))

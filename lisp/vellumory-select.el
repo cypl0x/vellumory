@@ -70,6 +70,9 @@
 (defvar-local vellumory--selection nil "List of (PAGE TEXT QUADS) in document order.")
 (defvar-local vellumory--selection-mode 'chars)
 (defvar-local vellumory--hints nil "Pages → list of link quads shown as hints.")
+(defvar vellumory--annotation-drag)
+(declare-function vellumory--movable-annotation-at "vellumory-annotate" (location))
+(declare-function vellumory--drag-annotation "vellumory-annotate" (annotation start))
 
 ;;;; Overlays composited by the worker
 
@@ -101,6 +104,9 @@ Its corners are X0 Y0, X1 Y0, X1 Y1 and X0 Y1, in one flat vector."
       (push quad quads) (push 1 kinds))
     (dolist (quad (vellumory--caret-quads page))
       (push quad quads) (push 5 kinds))
+    ;; Where a dragged annotation would land, in the colour of link hints.
+    (when (eql (car vellumory--annotation-drag) page)
+      (push (cdr vellumory--annotation-drag) quads) (push 3 kinds))
     (when quads
       (let ((alpha (if dark 110 255)))
         `((quads . ,(vconcat (nreverse quads))) (kinds . ,(vconcat (nreverse kinds)))
@@ -357,37 +363,40 @@ On a graphical display its text also becomes the primary selection."
   (when vellumory--selection (setq vellumory--selection nil) (vellumory--refresh t)))
 
 (defun vellumory-mouse-press (event)
-  "Follow a link, or select text by dragging from EVENT."
+  "Follow a link, or select text by dragging from EVENT.
+Dragging a note or another placed annotation moves it instead."
   (interactive "e")
   (let* ((posn (event-start event)) (window (posn-window posn)))
     (when (windowp window)
       (select-window window)
       (when-let* ((start (vellumory--event-location posn)))
-        (let ((link (apply #'vellumory--link-at start)) (field (apply #'vellumory--form-field-at start))
-              (moved nil) (last start) (busy nil))
-          (track-mouse
-            (cl-loop for next = (read-event)
-                     while (mouse-movement-p next)
-                     do (when-let* ((here (vellumory--event-location (event-start next))))
-                          (when (and (not (equal here last))
-                                     (> (+ (abs (- (nth 1 here) (nth 1 start)))
-                                           (abs (- (nth 2 here) (nth 2 start)))
-                                           (if (= (car here) (car start)) 0 1000))
-                                        2))
-                            (setq moved t last here)
-                            (unless busy
-                              (setq busy t)
-                              (vellumory--select-range
-                               start here 'chars
-                               (lambda (selections)
-                                 (setq busy nil)
-                                 (setq vellumory--selection selections)
-                                 (vellumory--refresh t))))))))
-          (cond (moved (vellumory--select-range start last 'chars #'vellumory--set-selection))
-                (field (vellumory-fill-field field))
-                (link (vellumory--visit-link link))
-                (vellumory-caret-mode (apply #'vellumory-caret--place-at start))
-                (t (vellumory-clear-selection))))))))
+        (if-let* ((annotation (vellumory--movable-annotation-at start)))
+            (vellumory--drag-annotation annotation start)
+          (let ((link (apply #'vellumory--link-at start)) (field (apply #'vellumory--form-field-at start))
+                (moved nil) (last start) (busy nil))
+            (track-mouse
+              (cl-loop for next = (read-event)
+                       while (mouse-movement-p next)
+                       do (when-let* ((here (vellumory--event-location (event-start next))))
+                            (when (and (not (equal here last))
+                                       (> (+ (abs (- (nth 1 here) (nth 1 start)))
+                                             (abs (- (nth 2 here) (nth 2 start)))
+                                             (if (= (car here) (car start)) 0 1000))
+                                          2))
+                              (setq moved t last here)
+                              (unless busy
+                                (setq busy t)
+                                (vellumory--select-range
+                                 start here 'chars
+                                 (lambda (selections)
+                                   (setq busy nil)
+                                   (setq vellumory--selection selections)
+                                   (vellumory--refresh t))))))))
+            (cond (moved (vellumory--select-range start last 'chars #'vellumory--set-selection))
+                  (field (vellumory-fill-field field))
+                  (link (vellumory--visit-link link))
+                  (vellumory-caret-mode (apply #'vellumory-caret--place-at start))
+                  (t (vellumory-clear-selection)))))))))
 
 (defun vellumory--mouse-select-unit (event mode)
   "Select the unit of MODE, `words' or `lines', under EVENT."

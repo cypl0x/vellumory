@@ -263,7 +263,10 @@ pages on, previewed over the page./
   lines, copy with =y=.
 - *Annotations* on selected text: highlight (=a h=), underline (=a u=),
   strike out (=a s=), squiggly underline (=a q=); notes at a click
-  (=a n=); a list where you edit their text or delete them (=a l=).
+  (=a n=); a list where you edit their text or delete them (=a l=).  Drag a
+  note to move it; right-click any annotation to change its text, colour or
+  opacity, move it or delete it.  A moved annotation keeps the appearance
+  its program drew.
   Without a comment, the marked text becomes the annotation's contents, so
   it reads well to screen readers.  PDF/A-1 documents are offered an
   underline instead of a highlight, which would need transparency.
@@ -436,25 +439,25 @@ Versions checked: DocView of Emacs 31.1; pdf-tools 20260102.1101;
 emacs-reader at revision 4fca3aa (Codeberg); EAF PDF viewer
 of 2025-07-26 (nixpkgs); Vellumory 0.1.0.
 
-|                        | Vellumory                                          | DocView                                    | pdf-tools                                     | emacs-reader                              | EAF PDF viewer                   |
-|------------------------+----------------------------------------------------+--------------------------------------------+-----------------------------------------------+-------------------------------------------+----------------------------------|
-| Needs besides Emacs    | its worker (Lean, MuPDF), built from source        | a converter (Ghostscript or MuPDF)         | epdfinfo (poppler), compiled on install       | a dynamic module (MuPDF), built with make | Python, Qt and PyMuPDF           |
-| Pages drawn by         | Emacs                                              | Emacs                                      | Emacs                                         | Emacs                                     | Qt, over the Emacs frame         |
-| Rendering              | worker threads, visible tiles only                 | every page to an image file up front       | epdfinfo, one page per request                | 8 threads in the module                   | PyMuPDF                          |
-| Continuous pages       | yes                                                | page edge advances (=doc-view-continuous=) | roll mode (=pdf-view-roll-minor-mode=)        | one page, continuing to the next          | ?                                |
-| Two pages side by side | yes                                                | no                                         | no                                            | no                                        | ?                                |
-| Formats                | PDF XPS EPUB CBZ FB2; DVI PS DjVu office converted | PDF PS DVI DjVu ODF EPUB CBZ FB2 XPS       | PDF                                           | PDF EPUB MOBI FB2 XPS CBZ, office         | PDF XPS CBZ EPUB FB2, office     |
-| Search                 | incremental, regexp, highlighted; occur            | regexp, by page, no highlights             | isearch (regexp too), highlighted; occur      | no                                        | yes                              |
-| Select and copy        | mouse, keyboard caret                              | text view (=C-c C-t=)                      | mouse                                         | no                                        | yes                              |
-| Links                  | follow, hints, hover preview                       | no                                         | follow, hints                                 | no                                        | follow                           |
-| Outline                | sidebar, Imenu                                     | Imenu                                      | outline buffer, Imenu                         | outline buffer, Imenu                     | yes                              |
-| Dark pages             | theme colours, inverted, night mode                | SVG face colours                           | midnight, themed                              | dark mode                                 | inverted                         |
-| Annotations            | 4 markup kinds, notes; edit text, delete           | no                                         | text and markup; edit, recolour, move, delete | no                                        | 4 markup kinds, text; edit, move |
-| Presentation           | full screen, page transitions                      | no                                         | no                                            | yes                                       | yes                              |
-| SyncTeX                | yes                                                | no                                         | yes                                           | no                                        | yes                              |
-| org-noter              | yes                                                | yes                                        | yes                                           | no                                        | no                               |
-| evil keys              | built in                                           | evil-collection                            | evil-collection                               | evil-collection                           | its own single keys              |
-| Platforms              | Linux (tested)                                     | any Emacs with PNG and a converter         | Linux; macOS and Windows "as is"              | Linux, macOS, Windows                     | ?                                |
+|                        | Vellumory                                           | DocView                                    | pdf-tools                                     | emacs-reader                              | EAF PDF viewer                   |
+|------------------------+-----------------------------------------------------+--------------------------------------------+-----------------------------------------------+-------------------------------------------+----------------------------------|
+| Needs besides Emacs    | its worker (Lean, MuPDF), built from source         | a converter (Ghostscript or MuPDF)         | epdfinfo (poppler), compiled on install       | a dynamic module (MuPDF), built with make | Python, Qt and PyMuPDF           |
+| Pages drawn by         | Emacs                                               | Emacs                                      | Emacs                                         | Emacs                                     | Qt, over the Emacs frame         |
+| Rendering              | worker threads, visible tiles only                  | every page to an image file up front       | epdfinfo, one page per request                | 8 threads in the module                   | PyMuPDF                          |
+| Continuous pages       | yes                                                 | page edge advances (=doc-view-continuous=) | roll mode (=pdf-view-roll-minor-mode=)        | one page, continuing to the next          | ?                                |
+| Two pages side by side | yes                                                 | no                                         | no                                            | no                                        | ?                                |
+| Formats                | PDF XPS EPUB CBZ FB2; DVI PS DjVu office converted  | PDF PS DVI DjVu ODF EPUB CBZ FB2 XPS       | PDF                                           | PDF EPUB MOBI FB2 XPS CBZ, office         | PDF XPS CBZ EPUB FB2, office     |
+| Search                 | incremental, regexp, highlighted; occur             | regexp, by page, no highlights             | isearch (regexp too), highlighted; occur      | no                                        | yes                              |
+| Select and copy        | mouse, keyboard caret                               | text view (=C-c C-t=)                      | mouse                                         | no                                        | yes                              |
+| Links                  | follow, hints, hover preview                        | no                                         | follow, hints                                 | no                                        | follow                           |
+| Outline                | sidebar, Imenu                                      | Imenu                                      | outline buffer, Imenu                         | outline buffer, Imenu                     | yes                              |
+| Dark pages             | theme colours, inverted, night mode                 | SVG face colours                           | midnight, themed                              | dark mode                                 | inverted                         |
+| Annotations            | 4 markup kinds, notes; edit, recolour, move, delete | no                                         | text and markup; edit, recolour, move, delete | no                                        | 4 markup kinds, text; edit, move |
+| Presentation           | full screen, page transitions                       | no                                         | no                                            | yes                                       | yes                              |
+| SyncTeX                | yes                                                 | no                                         | yes                                           | no                                        | yes                              |
+| org-noter              | yes                                                 | yes                                        | yes                                           | no                                        | no                               |
+| evil keys              | built in                                            | evil-collection                            | evil-collection                               | evil-collection                           | its own single keys              |
+| Platforms              | Linux (tested)                                      | any Emacs with PNG and a converter         | Linux; macOS and Windows "as is"              | Linux, macOS, Windows                     | ?                                |
 
 Vellumory also inspects, validates and edits documents (see [[#features][Features]]);
 the matrix leaves those out.
@@ -493,11 +496,9 @@ What pdf-tools still does that Vellumory does not is in the next section.
   has PNG support and a converter.  On the screen benchmark its median
   scroll step was level with Vellumory's (3.2–4.1 ms against 3.7–4.3 ms).
 - *pdf-tools* has been developed since 2013, is on MELPA, and its
-  documentation says it works on macOS and Windows.  Its annotations can be
-  recoloured and moved; Vellumory's can only have their text edited.
-  org-pdftools was written for it, and org-noter supports it.  On
-  a short document its roll mode opened as fast as Vellumory (71–86 ms
-  against 77–90 ms).
+  documentation says it works on macOS and Windows.  org-pdftools was
+  written for it, and org-noter supports it.  On a short document its roll
+  mode opened as fast as Vellumory (71–86 ms against 77–90 ms).
 - *emacs-reader* is one dynamic module, no separate process; it opens
   MOBI, and office documents through MuPDF without LibreOffice; it builds
   on macOS and Windows, has a Guix channel, and its README says it is to
@@ -505,8 +506,8 @@ What pdf-tools still does that Vellumory does not is in the next section.
 - *EAF's PDF viewer* draws in Qt, outside Emacs' display engine.  Where the
   pgtk build of Emacs ran on X11 and added about 8 ms to every Emacs
   viewer's step, EAF's median step (9.0–10.0 ms) was lower than
-  Vellumory's (11.8–13.7 ms).  Its annotations include inline text and can
-  be moved.
+  Vellumory's (11.8–13.7 ms).  Its annotations include inline text, which
+  Vellumory cannot add.
 - *doc-tools* renders every page when a file opens, so its scrolling is
   smooth too: worst step 7.0–9.5 ms against Vellumory's 6.1–6.6 ms.
 - *Vellumory* needs a worker you build yourself today, has been used only
@@ -1223,7 +1224,8 @@ can fix it, offers a button.
   package-vc and Spacemacs recipes are untested.
 - No print command; no signing.
 - Annotations: highlight, underline, strike-out, squiggly and text notes
-  only; no free-hand drawing or shapes; they cannot be moved or resized.
+  only; no free-hand drawing, shapes or inline text; they can be moved but
+  not resized.
 - No JavaScript (by design) and no dynamic XFA forms (MuPDF does not render
   them).
 - The edit store only grows (no pruning command yet), and a document's
@@ -1402,11 +1404,11 @@ vellumory synctexback FILE.pdf PAGE X Y     # backward search
 Edit operations: =select=, =rotate=, =append=, =compress=, =linearize=,
 =labels=, =remove-labels=, =attach=, =detach=, =metadata=, =ocr=, =stamp=,
 =encrypt=, =decrypt=, =fill-form=, =annotate=, =annotation-edit=,
-=annotation-delete= and =syntax=.  Operations carrying passwords are read
-from standard input (=vellumory edit FILE -=), and qpdf receives passwords
-through private files, never on its command line.  The reader and the
-command line share the store, so an edit made in a script can be undone in
-Emacs and the other way round.
+=annotation-style=, =annotation-move=, =annotation-delete= and =syntax=.
+Operations carrying passwords are read from standard input (=vellumory edit
+FILE -=), and qpdf receives passwords through private files, never on its
+command line.  The reader and the command line share the store, so an edit
+made in a script can be undone in Emacs and the other way round.
 
 ** Files Vellumory writes
 :PROPERTIES:

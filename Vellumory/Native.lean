@@ -333,7 +333,7 @@ opaque signedCount (doc : @& Document) : IO UInt32
 opaque signatures (doc : @& Document) : IO String
 
 /-- The annotations of PAGE as JSON (object, type, rect, contents, author,
-    modified, color, quads), in points relative to the crop box. -/
+    modified, color, opacity, quads), in points relative to the crop box. -/
 @[extern "vellumory_native_annotations"]
 opaque annotations (doc : @& Document) (page : UInt32) : IO String
 
@@ -348,6 +348,13 @@ opaque annotAdd (input output : @& String) (page : UInt32) (kind : @& String) (q
 /-- Set the contents of annotation OBJECT on zero-based PAGE, or REMOVE it. -/
 @[extern "vellumory_native_annot_change"]
 opaque annotChange (input output : @& String) (page object : UInt32) (remove : Bool) (contents : @& String)
+  (time : Float) : IO Unit
+
+/-- Restyle annotation OBJECT on zero-based PAGE (COLOR: 3 numbers or none;
+    OPACITY: 0 to 1, negative to keep) or move it by DX, DY points, keeping
+    its appearance stream; TIME dates the change. -/
+@[extern "vellumory_native_annot_modify"]
+opaque annotModify (input output : @& String) (page object : UInt32) (color : @& FloatArray) (opacity dx dy : Float)
   (time : Float) : IO Unit
 
 /-- A simple XMP property by namespace URI and name (prefixes do not matter). -/

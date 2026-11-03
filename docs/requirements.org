@@ -255,6 +255,13 @@ ERT; on the host: the previews of a reopened document are not rendered again)
 ** DONE Doom module :tools vellumory: lazy loading, localleader + which-key,
 doom-modeline segment, popup rules, ESC, real buffers; verified live in a
 reproducible Doom on the user's exact Emacs (keys, wheel, which-key, modeline)
+** DONE Annotations changed and moved: colour and opacity (drawn anew), moves
+that keep the appearance another program drew (a foreign highlight stays
+blue where MuPDF would draw it yellow), right and down also on turned pages;
+dragging a note on the page with a drop preview; right-click menu on any
+annotation (which also fixed right-clicks on links and form fields, never
+bound inside image-map areas); PDF/A-1b and -2b kept, PDF/A-1 refuses
+translucency (Lean, ERT, GUI suite, and a real drag on X11)
 ** DONE Org links: =vellumory:FILE::PAGE::Y= store (exact position; selection or
 outline heading as description), follow, export (=#page=N= for HTML/LaTeX),
 completion; org-pdftools =pdf:= links open here when pdf-tools is absent (ERT);

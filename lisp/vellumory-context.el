@@ -62,6 +62,15 @@
 (declare-function vellumory-underline "vellumory-annotate" (&optional comment))
 (declare-function vellumory-strike-out "vellumory-annotate" (&optional comment))
 (declare-function vellumory-squiggly "vellumory-annotate" (&optional comment))
+(declare-function vellumory--annotation-at "vellumory-annotate" (page x y))
+(declare-function vellumory--annotation-help "vellumory-annotate" (annotation))
+(declare-function vellumory--annotation-change "vellumory-annotate" (annotation op &rest fields))
+(declare-function vellumory--read-annotation-color "vellumory-annotate" (annotation))
+(declare-function vellumory--read-annotation-opacity "vellumory-annotate" (annotation))
+(declare-function vellumory-annotation-set-text "vellumory-annotate" (annotation contents))
+(declare-function vellumory-annotation-set-color "vellumory-annotate" (annotation color))
+(declare-function vellumory-annotation-set-opacity "vellumory-annotate" (annotation percent))
+(declare-function vellumory-move-annotation "vellumory-annotate" (annotation))
 (declare-function vellumory-copy-selection "vellumory-select" ())
 (declare-function vellumory-undo "vellumory-edit" ())
 (declare-function vellumory-redo "vellumory-edit" ())
@@ -81,6 +90,7 @@
 (declare-function vellumory-set-theme "vellumory" (theme))
 (declare-function vellumory--this-document "vellumory" ())
 (defvar vellumory--themes)
+(defvar vellumory--map-areas)
 (declare-function vellumory-night-mode "vellumory" (&optional arg))
 
 (defconst vellumory-context--maps
@@ -205,6 +215,25 @@
         (vellumory-context--item menu "Copy the address"
                                  (lambda () (interactive) (kill-new uri) (message "Copied %s" uri))))
       (vellumory-context--separator menu))
+    (when-let* ((annotation (and location (apply #'vellumory--annotation-at location))))
+      (vellumory-context--title menu (truncate-string-to-width (vellumory--annotation-help annotation) 50 nil nil "…"))
+      (vellumory-context--item menu "Edit the text…"
+                               (lambda () (interactive)
+                                 (vellumory-annotation-set-text
+                                  annotation (read-string "Text: " (alist-get 'contents annotation)))))
+      (vellumory-context--item menu "Colour…"
+                               (lambda () (interactive)
+                                 (vellumory-annotation-set-color annotation (vellumory--read-annotation-color annotation))))
+      (vellumory-context--item menu "Opacity…"
+                               (lambda () (interactive)
+                                 (vellumory-annotation-set-opacity annotation
+                                                                   (vellumory--read-annotation-opacity annotation))))
+      (vellumory-context--item menu "Move…" (lambda () (interactive) (vellumory-move-annotation annotation)))
+      (vellumory-context--item menu "Delete"
+                               (lambda () (interactive)
+                                 (when (y-or-n-p (format "Delete this %s? " (alist-get 'type annotation)))
+                                   (vellumory--annotation-change annotation "annotation-delete"))))
+      (vellumory-context--separator menu))
     (when vellumory--selection
       (let ((text (vellumory-context--selection-text)))
         (vellumory-context--item menu "Copy" #'vellumory-copy-selection)
@@ -294,7 +323,13 @@ For `context-menu-functions'; returns MENU."
       (let ((keymap (symbol-value map)))
         (keymap-set keymap "<down-mouse-3>" #'vellumory-context-menu)
         ;; The release of the click that opened the menu does nothing.
-        (keymap-set keymap "<mouse-3>" #'ignore))
+        (keymap-set keymap "<mouse-3>" #'ignore)
+        ;; Inside a link, an annotation or a form field on a page, a click
+        ;; arrives prefixed with the area's id: the same menu there.
+        (when (eq map 'vellumory-mode-map)
+          (dolist (area vellumory--map-areas)
+            (define-key keymap (vector area 'down-mouse-3) #'vellumory-context-menu)
+            (define-key keymap (vector area 'mouse-3) #'ignore))))
       (add-hook (intern (concat (string-remove-suffix "-map" (symbol-name map)) "-hook"))
                 #'vellumory-context--setup))))
 

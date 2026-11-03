@@ -499,6 +499,102 @@ def testAnnotations : IO Unit := do
         ensure ((← IO.FS.readBinFile copy) == (← IO.FS.readBinFile archival)) "and leaves the file as it was"
   IO.println "PASS annotations: add, edit, delete, deterministic; PDF/A-1b and -2b kept, PDF/A-1 highlights refused"
 
+/-- A page whose highlight was drawn by another tool: its appearance is a blue
+    box, though its colour entry says yellow, so a regenerated appearance shows. -/
+def foreignHighlight : String :=
+  Fixtures.document #[
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R] >>",
+    "<< /Type /Annot /Subtype /Highlight /Rect [100 600 300 640] /QuadPoints [100 640 300 640 100 600 300 600] /C [1 1 0] /F 4 /AP << /N 5 0 R >> >>",
+    "<< /Type /XObject /Subtype /Form /BBox [100 600 300 640] /Length 27 >>\nstream\n0 0 1 rg 100 600 200 40 re f\nendstream"]
+
+def testAnnotationStyleAndMove : IO Unit := do
+  withScratchDir fun dir => do
+    let listOf := fun (file : System.FilePath) (page : Nat) => do
+      let doc ← Native.openDocument (← IO.FS.readBinFile file) ""
+      match ← IO.ofExcept (Json.parse (← Native.annotations doc page.toUInt32)) with
+      | .arr a => return a
+      | _ => return #[]
+    let numbers := fun (j : Json) (key : String) => (j.getObjValAs? (Array Float) key).toOption.getD #[]
+    let near := fun (a b : Array Float) => a.size == b.size && (a.zip b).all fun (x, y) => (x - y).abs < 0.05
+    let pixelsOf := fun (file : System.FilePath) => do
+      return ppmPixels (← Native.render (← Native.openDocument (← IO.FS.readBinFile file) "") 0 612 0 792)
+    let sample := fun (image : ByteArray) (x y : Nat) => (image[3 * (y * 612 + x)]!.toNat,
+      image[3 * (y * 612 + x) + 1]!.toNat, image[3 * (y * 612 + x) + 2]!.toNat)
+    -- Moved: every coordinate, and the appearance its tool drew (blue, not a new yellow one).
+    let foreign := dir / "foreign.pdf"
+    IO.FS.writeFile foreign foreignHighlight
+    let store : Edit.Store := { root := dir / "store" }
+    let before := (← listOf foreign 0)[0]!
+    let object := (before.getObjValAs? Nat "object").toOption.getD 0
+    let _ ← Edit.apply store foreign (.annotationMove 1 object 50 100 1793170000)
+    let after := (← listOf foreign 0)[0]!
+    ensure (near (numbers after "rect") ((numbers before "rect").mapIdx fun i v => v + if i % 2 == 0 then 50 else 100))
+      s!"moved rectangle: {(numbers before "rect")} → {(numbers after "rect")}"
+    let quadsOf := fun (j : Json) => ((j.getObjValAs? (Array (Array Float)) "quads").toOption.getD #[]).flatten
+    ensure (near (quadsOf after) ((quadsOf before).mapIdx fun i v => v + if i % 2 == 0 then 50 else 100))
+      s!"moved quads: {quadsOf before} → {quadsOf after}"
+    let image ← pixelsOf foreign
+    let (r, g, b) := sample image 250 272
+    ensure (r < 60 && g < 60 && b > 200) s!"the original appearance at the new place: {(r, g, b)}"
+    let (r, g, b) := sample image 120 172
+    ensure (r > 240 && g > 240 && b > 240) s!"nothing left at the old place: {(r, g, b)}"
+    -- On a page turned 90°, a move is still right and down as the reader sees it.
+    let doc := dir / "doc.pdf"
+    IO.FS.writeFile doc Fixtures.reader
+    let _ ← Edit.apply store doc (.annotate 2 "Text" #[] #[400, 100, 400, 100] #[] "Check this" "Reader" 1793166790)
+    let note := (← listOf doc 1)[0]!
+    let object := (note.getObjValAs? Nat "object").toOption.getD 0
+    let _ ← Edit.apply store doc (.annotationMove 2 object 50 30 1793170000)
+    let moved := (← listOf doc 1)[0]!
+    ensure (near (numbers moved "rect") ((numbers note "rect").mapIdx fun i v => v + if i % 2 == 0 then 50 else 30))
+      s!"moved on a turned page: {(numbers note "rect")} → {(numbers moved "rect")}"
+    -- Restyled: colour and opacity, drawn anew.
+    let quads := #[42.0, 179.1, 300.0, 179.1, 300.0, 195.6, 42.0, 195.6]
+    let _ ← Edit.apply store doc (.annotate 1 "Highlight" quads #[] #[1, 0.85, 0.2] "Line 1" "Reader" 1793166790)
+    let object := ((← listOf doc 0)[0]!.getObjValAs? Nat "object").toOption.getD 0
+    let _ ← Edit.apply store doc (.annotationStyle 1 object #[0.2, 0.4, 0.9] (some 0.5) 1793170000)
+    let styled := (← listOf doc 0)[0]!
+    ensure (near (numbers styled "color") #[0.2, 0.4, 0.9] && (styled.getObjValAs? Float "opacity").toOption == some 0.5)
+      s!"restyled: {styled.compress}"
+    let plain := ppmPixels (← Native.render (← Native.openDocument Fixtures.reader.toUTF8 "") 0 612 0 792)
+    -- A point inside the band where the page has no ink.
+    let x := 50 + ((List.range 240).find? fun i =>
+      let (r, g, b) := sample plain (50 + i) 186; r > 245 && g > 245 && b > 245).getD 0
+    let (r, g, b) := sample (← pixelsOf doc) x 186
+    ensure (b > 200 && r < 200 && r < b) s!"the new colour, half covering the page: {(r, g, b)}"
+    -- Refused: nothing to set, colours outside 0–1, opacity above 1, no or no finite move.
+    let rejected := fun (op : Edit.Operation) => match op.validate 3 with | .error _ => true | .ok _ => false
+    ensure (rejected (.annotationStyle 1 1 #[] none 0) && rejected (.annotationStyle 1 1 #[0.5, 0.5] none 0) &&
+      rejected (.annotationStyle 1 1 #[2, 0, 0] none 0) && rejected (.annotationStyle 1 1 #[] (some 1.5) 0) &&
+      rejected (.annotationStyle 4 1 #[0, 0, 0] none 0) && rejected (.annotationMove 1 1 0 0 0) &&
+      rejected (.annotationMove 1 1 (0 / 0) 1 0) && rejected (.annotationMove 0 1 1 1 0)) "style and move validation"
+    -- PDF/A: a moved and recoloured note keeps PDF/A-1b and -2b; PDF/A-1 refuses translucency.
+    let original := dir / "original.pdf"
+    IO.FS.writeFile original Fixtures.reader
+    for (part, flavour) in [(1, "1b"), (2, "2b")] do
+      let archival := dir / s!"pdfa-{part}.pdf"
+      let made ← IO.Process.output {
+        cmd := Tools.ocrmypdf
+        args := #["--skip-text", "--output-type", s!"pdfa-{part}", "--quiet", original.toString, archival.toString] }
+      ensure (made.exitCode == 0) s!"ocrmypdf PDF/A-{part}: {made.stderr}"
+      let store : Edit.Store := { root := dir / s!"store-a{part}" }
+      let _ ← Edit.apply store archival (.annotate 1 "Text" #[] #[400, 100, 400, 100] #[] "Check" "Reader" 1793166790)
+      let object := (((← listOf archival 0).find? fun a => (a.getObjValAs? String "type").toOption == some "Text").bind
+        fun a => (a.getObjValAs? Nat "object").toOption).getD 0
+      let _ ← Edit.apply store archival (.annotationMove 1 object 20 20 1793170000)
+      let _ ← Edit.apply store archival (.annotationStyle 1 object #[0.1, 0.45, 0.9] (if part == 1 then none else some 0.6)
+        1793170000)
+      ensure (((← Validate.run archival.toString flavour).getObjValAs? Bool "compliant").toOption == some true)
+        s!"PDF/A-{flavour} after moving and restyling a note"
+      if part == 1 then
+        let kept ← IO.FS.readBinFile archival
+        let refused ← (Edit.apply store archival (.annotationStyle 1 object #[] (some 0.5) 1793170000)).toBaseIO
+        ensure (match refused with | .error _ => true | .ok _ => false) "PDF/A-1 refuses translucency"
+        ensure ((← IO.FS.readBinFile archival) == kept) "and leaves the file as it was"
+  IO.println "PASS annotation style and move: colour and opacity drawn anew; moves keep the original appearance, also on turned pages; PDF/A-1b and -2b kept"
+
 def testSignatures : IO Unit := do
   let some fixture ← IO.getEnv "VELLUMORY_SIGNED_FIXTURE"
     | throw <| IO.userError "VELLUMORY_SIGNED_FIXTURE is not set (nix develop provides it)"
@@ -1584,6 +1680,7 @@ def main (args : List String) : IO UInt32 := do
       testAssociatedFiles
       testStampAndEncryption
       testAnnotations
+      testAnnotationStyleAndMove
       testSignatures
       testForms
       return 0

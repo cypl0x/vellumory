@@ -1590,6 +1590,74 @@ rows as it goes (walking the list per page made it quadratic: 1.3 s on a
           (kill-buffer reader))
       (delete-directory directory t))))
 
+(ert-deftest vellumory-annotations-recolour-fade-and-move ()
+  "An annotation's colour, opacity and place change as recorded edits.
+Moving keeps it on its page; the place a drag would land is drawn."
+  (let* ((program (getenv "VELLUMORY_TEST_PROGRAM")) (source (getenv "VELLUMORY_TEST_PDF"))
+         (directory (make-temp-file "vellumory-restyle-" t))
+         (file (expand-file-name "doc.pdf" directory))
+         (process-environment (cons (concat "VELLUMORY_STORE=" (expand-file-name "store" directory))
+                                    process-environment))
+         (vellumory-state-directory (expand-file-name "state" directory))
+         (vellumory-program program))
+    (skip-unless (and program source))
+    (copy-file source file)
+    (unwind-protect
+        (let ((reader (vellumory-open file t)))
+          (with-current-buffer reader
+            (should (vellumory-test--wait (lambda () vellumory--pages)))
+            (let* ((hash vellumory--hash)
+                   (edited (lambda (change)
+                             (setq hash vellumory--hash)
+                             (funcall change)
+                             (should (vellumory-test--wait (lambda () (not (equal hash vellumory--hash))) 20))))
+                   (note (lambda ()
+                           (vellumory--ensure-annotations 1)
+                           (vellumory-test--wait (lambda () (vectorp (vellumory--ensure-annotations 1))))
+                           (cons '(page . 1) (aref (vellumory--ensure-annotations 1) 0))))
+                   (near (lambda (a b) (< (abs (- a b)) 0.01))))
+              (funcall edited (lambda () (vellumory-add-note '(1 400 100) "Check this")))
+              ;; Found where it is drawn, and dragging moves it; not beside it.
+              (let* ((a (funcall note)) (rect (alist-get 'rect a))
+                     (inside (list 1 (/ (+ (aref rect 0) (aref rect 2)) 2) (/ (+ (aref rect 1) (aref rect 3)) 2))))
+                (should (equal (alist-get 'object (apply #'vellumory--annotation-at inside)) (alist-get 'object a)))
+                (should (vellumory--movable-annotation-at inside))
+                (should-not (vellumory--annotation-at 1 (- (aref rect 0) 5) (aref rect 1)))
+                ;; Colour and opacity, drawn anew.
+                (funcall edited (lambda () (vellumory-annotation-set-color a "#1a73e8")))
+                (let ((a (funcall note)))
+                  (should (cl-every near (alist-get 'color a) '(0.102 0.451 0.909)))
+                  (should (equal (vellumory--annotation-color-name a) "#1a73e8"))
+                  (funcall edited (lambda () (vellumory-annotation-set-opacity a 50))))
+                (should (= (alist-get 'opacity (funcall note)) 0.5))
+                (should-error (vellumory-annotation-set-opacity a 150) :type 'user-error)
+                ;; Where a drag would land is drawn, in the hint colour.
+                (setq vellumory--annotation-drag (cons 1 (vellumory--rect-quad 10 10 30 30)))
+                (let ((overlay (vellumory--page-overlay 1)))
+                  (should (equal (aref (alist-get 'kinds overlay) (1- (length (alist-get 'kinds overlay)))) 3)))
+                (setq vellumory--annotation-drag nil)
+                ;; A move stays on the page: far past its edge, it stops there.
+                (let ((size (aref vellumory--pages 1)))
+                  (should (equal (vellumory--annotation-moved-within a 1e6 -1e6)
+                                 (list (- (alist-get 'width size) (aref rect 2)) (- (aref rect 1))))))
+                ;; Moved where the next click lands.
+                (cl-letf (((symbol-function 'read-event)
+                           (lambda (&rest _) (list 'mouse-1 (list (selected-window) 1 '(0 . 0) 0))))
+                          ((symbol-function 'vellumory--event-location) (lambda (_) '(1 300 200))))
+                  (funcall edited (lambda () (vellumory-move-annotation (funcall note)))))
+                (let ((moved (alist-get 'rect (funcall note))))
+                  (should (funcall near (aref moved 0) 300))
+                  (should (funcall near (aref moved 1) 200))
+                  (should (funcall near (- (aref moved 2) (aref moved 0)) (- (aref rect 2) (aref rect 0))))))
+              ;; Each was an edit: undone, the document is as it was.
+              (dotimes (_ 4) (funcall edited #'vellumory-undo))
+              (should (equal (with-temp-buffer (set-buffer-multibyte nil) (insert-file-contents-literally file)
+                                               (buffer-string))
+                             (with-temp-buffer (set-buffer-multibyte nil) (insert-file-contents-literally source)
+                                               (buffer-string))))))
+          (kill-buffer reader))
+      (delete-directory directory t))))
+
 (ert-deftest vellumory-signed-documents-warn-before-edits-and-report ()
   (let* ((program (getenv "VELLUMORY_TEST_PROGRAM")) (fixture (getenv "VELLUMORY_SIGNED_FIXTURE"))
          (directory (make-temp-file "vellumory-signed-" t))
@@ -1739,7 +1807,10 @@ the area's id; each must reach the reader's mouse commands."
       (should (eq (key-binding (vector area 'down-mouse-1)) 'vellumory-mouse-press))
       (should (eq (key-binding (vector area 'double-mouse-1)) 'vellumory-mouse-select-word))
       (should (eq (key-binding (vector area 'wheel-down)) 'vellumory-wheel))
-      (should (eq (key-binding (vector area 'C-mouse-1)) 'vellumory-sync-backward)))))
+      (should (eq (key-binding (vector area 'C-mouse-1)) 'vellumory-sync-backward))
+      ;; The right-click menu too: a link's, an annotation's.
+      (should (eq (key-binding (vector area 'down-mouse-3)) 'vellumory-context-menu))
+      (should (eq (key-binding (vector area 'mouse-3)) 'ignore)))))
 
 (ert-deftest vellumory-opens-as-the-document-asks ()
   "/PageLayout chooses the spread unless the user set one; /PageMode is kept

@@ -58,6 +58,12 @@ inductive Operation where
       (time : Float)
   | annotationEdit (page object : Nat) (contents : String) (time : Float)
   | annotationDelete (page object : Nat)
+  /-- A new COLOR (3 numbers from 0 to 1, or none to keep) and OPACITY (from 0
+      to 1, or none to keep) for annotation OBJECT on one-based PAGE. -/
+  | annotationStyle (page object : Nat) (color : Array Float) (opacity : Option Float) (time : Float)
+  /-- Annotation OBJECT on one-based PAGE moved DX points right and DY down,
+      its appearance kept as it was drawn. -/
+  | annotationMove (page object : Nat) (dx dy : Float) (time : Float)
   /-- Form fields set by fully qualified name; JavaScript triggers never run. -/
   | fillForm (values : Array (String × String))
   deriving Inhabited
@@ -86,6 +92,10 @@ def Operation.label : Operation → String
   | .annotate page kind .. => s!"{if kind == "Text" then "note" else kind.toLower} on page {page}"
   | .annotationEdit page .. => s!"edit annotation on page {page}"
   | .annotationDelete page _ => s!"delete annotation on page {page}"
+  | .annotationStyle page _ color opacity _ =>
+    let opacity := opacity.map fun o => s!"opacity {(o * 100).round.toUInt64}%"
+    s!"restyle annotation on page {page} ({", ".intercalate ((if color.isEmpty then [] else ["colour"]) ++ opacity.toList)})"
+  | .annotationMove page .. => s!"move annotation on page {page}"
   | .fillForm values => s!"fill form ({", ".intercalate (values.map (·.1)).toList})"
 
 def Operation.toJson : Operation → Json
@@ -119,6 +129,12 @@ def Operation.toJson : Operation → Json
       ("time", .num time)]
   | .annotationDelete page object => .mkObj [("op", .str "annotation-delete"), ("page", Vellumory.toJson page),
       ("object", Vellumory.toJson object)]
+  | .annotationStyle page object color opacity time => .mkObj <| [("op", .str "annotation-style"),
+      ("page", Vellumory.toJson page), ("object", Vellumory.toJson object), ("color", .arr (color.map .num))] ++
+      (opacity.map fun o => ("opacity", Json.num o)).toList ++ [("time", .num time)]
+  | .annotationMove page object dx dy time => .mkObj [("op", .str "annotation-move"),
+      ("page", Vellumory.toJson page), ("object", Vellumory.toJson object), ("dx", .num dx), ("dy", .num dy),
+      ("time", .num time)]
   | .fillForm values => .mkObj [("op", .str "fill-form"), ("values", .obj (values.map fun (k, v) => (k, .str v)))]
 
 def Operation.fromJson (j : Json) : Except String Operation := do
@@ -167,6 +183,13 @@ def Operation.fromJson (j : Json) : Except String Operation := do
         | _ => throw s!"the value of {k} must be a string")
     | _ => throw "fill-form needs an object of values"
   | "annotation-delete" => return .annotationDelete (← j.getObjValAs? Nat "page") (← j.getObjValAs? Nat "object")
+  | "annotation-style" =>
+    return .annotationStyle (← j.getObjValAs? Nat "page") (← j.getObjValAs? Nat "object")
+      ((j.getObjValAs? (Array Float) "color").toOption.getD #[]) (j.getObjValAs? Float "opacity").toOption
+      ((j.getObjValAs? Float "time").toOption.getD 0)
+  | "annotation-move" =>
+    return .annotationMove (← j.getObjValAs? Nat "page") (← j.getObjValAs? Nat "object")
+      (← j.getObjValAs? Float "dx") (← j.getObjValAs? Float "dy") ((j.getObjValAs? Float "time").toOption.getD 0)
   | "encrypt" => return .encrypt ((j.getObjValAs? String "user").toOption.getD "")
                   ((j.getObjValAs? String "owner").toOption.getD "")
                   ((j.getObjValAs? String "print").toOption.getD "full")
@@ -213,6 +236,16 @@ def Operation.validate (count : Nat) : Operation → Except String Unit
       throw "a colour is three numbers from 0 to 1"
   | .annotationEdit page .. | .annotationDelete page _ =>
     unless 1 ≤ page && page ≤ count do throw s!"page must be within 1–{count}"
+  | .annotationStyle page _ color opacity _ => do
+    unless 1 ≤ page && page ≤ count do throw s!"page must be within 1–{count}"
+    if color.isEmpty && opacity.isNone then throw "no colour or opacity to set"
+    unless color.isEmpty || (color.size == 3 && color.all (fun c => 0 ≤ c && c ≤ 1)) do
+      throw "a colour is three numbers from 0 to 1"
+    unless opacity.all (fun o => 0 ≤ o && o ≤ 1) do throw "opacity is from 0 to 1"
+  | .annotationMove page _ dx dy _ => do
+    unless 1 ≤ page && page ≤ count do throw s!"page must be within 1–{count}"
+    unless dx.isFinite && dy.isFinite do throw "a move is two finite distances"
+    if dx == 0 && dy == 0 then throw "the annotation would not move"
   | .fillForm values => if values.isEmpty then throw "no form fields to fill" else pure ()
   | .encrypt user owner print modify _ => do
     if owner.isEmpty then throw "an owner password is required to keep the permissions"
@@ -276,7 +309,8 @@ def Operation.qpdfArgs (op : Operation) (input output : String) (pdfa : Option N
       s!"--to={pages}", "--from=1", "--repeat=1", "--"] ++ deterministic
   | .encrypt .. => #[input, output, s!"@{output}.args", "--newline-before-endstream"]
   -- MuPDF writes the annotation beside the output; qpdf rewrites it like any edit.
-  | .annotate .. | .annotationEdit .. | .annotationDelete .. | .fillForm .. =>
+  | .annotate .. | .annotationEdit .. | .annotationDelete .. | .annotationStyle .. | .annotationMove ..
+  | .fillForm .. =>
     #[s!"{output}.annotated", output] ++ deterministic
 
 /-- The program that performs an operation: ocrmypdf for OCR, qpdf otherwise. -/
@@ -312,6 +346,13 @@ def streamArguments (input : String) (pdfa : Option Nat) (file : String) : IO Un
 def encryptionArguments (user owner print modify : String) (extract : Bool) : String :=
   "\n".intercalate ["--encrypt", s!"--user-password={user}", s!"--owner-password={owner}", "--bits=256",
     s!"--print={print}", s!"--modify={modify}", s!"--extract={if extract then "y" else "n"}", "--"] ++ "\n"
+
+/-- The subtype of annotation OBJECT on one-based PAGE of FILE, if it is there. -/
+def annotationType (file : String) (page object : Nat) : IO (Option String) := do
+  let doc ← Native.openDocument (← IO.FS.readBinFile file) ""
+  let .arr found ← IO.ofExcept (Json.parse (← Native.annotations doc (page - 1).toUInt32)) | return none
+  return found.findSome? fun a =>
+    if (a.getObjValAs? Nat "object").toOption == some object then (a.getObjValAs? String "type").toOption else none
 
 /-- Steps to run, in order. A syntax edit first lets fix-qdf recompute
     offsets and stream lengths, then qpdf writes a normal PDF from it. A
@@ -362,6 +403,22 @@ def Operation.steps (op : Operation) (input output scratch : String) (pdfa : Opt
   | .annotationDelete page object =>
     #[.native (Native.annotChange input s!"{output}.annotated" (page - 1).toUInt32 object.toUInt32 true "" 0),
       .tool Tools.qpdf (op.qpdfArgs input output pdfa)]
+  | .annotationStyle page object color opacity time =>
+    -- PDF/A-1 forbids an annotation's opacity below 1 (ISO 19005-1 6.5.3) and
+    -- the transparency of a highlight's new appearance (see annotate).
+    if pdfa == some 1 && opacity.any (· < 1) then
+      #[.native (throw <| IO.userError "PDF/A-1 forbids translucent annotations")]
+    else
+    #[.native do
+        if pdfa == some 1 && !color.isEmpty && (← annotationType input page object) == some "Highlight" then
+          throw <| IO.userError "PDF/A-1 forbids the transparency a recoloured highlight needs"
+        Native.annotModify input s!"{output}.annotated" (page - 1).toUInt32 object.toUInt32 ⟨color⟩
+          (opacity.getD (-1)) 0 0 time,
+      .tool Tools.qpdf (op.qpdfArgs input output pdfa)]
+  | .annotationMove page object dx dy time =>
+    #[.native (Native.annotModify input s!"{output}.annotated" (page - 1).toUInt32 object.toUInt32 ⟨#[]⟩ (-1) dx dy
+        time),
+      .tool Tools.qpdf (op.qpdfArgs input output pdfa)]
   | .fillForm values =>
     #[.native (Native.fillForm input s!"{output}.annotated" (values.map (·.1)) (values.map (·.2))),
       .tool Tools.qpdf (op.qpdfArgs input output pdfa)]
@@ -371,7 +428,8 @@ def Operation.steps (op : Operation) (input output scratch : String) (pdfa : Opt
     adopting edited syntax (which replaces it) and annotations (MuPDF writes
     them to an intermediate file that qpdf then reads). -/
 def Operation.reads : Operation → Bool
-  | .syntax _ | .annotate .. | .annotationEdit .. | .annotationDelete .. | .fillForm .. => false
+  | .syntax _ | .annotate .. | .annotationEdit .. | .annotationDelete .. | .annotationStyle .. | .annotationMove ..
+  | .fillForm .. => false
   | _ => true
 
 /-- The output, and the input of every operation that reads it, are passed

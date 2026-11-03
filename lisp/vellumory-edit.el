@@ -91,11 +91,11 @@ exporting never changes it."
 (defun vellumory--marks-changed ()
   "Show the marks in the page previews and say how many there are."
   (when (fboundp 'vellumory--thumbnail-show-marks) (vellumory--thumbnail-show-marks))
-  (message (if vellumory--marked-pages
-               (format "Marked for export: %s (%s exports them)"
-                       (mapconcat #'number-to-string vellumory--marked-pages ", ")
-                       (substitute-command-keys "\\[vellumory-export-marked-pages]"))
-             "No pages marked")))
+  (message "%s" (if vellumory--marked-pages
+                    (format "Marked for export: %s (%s exports them)"
+                            (mapconcat #'number-to-string vellumory--marked-pages ", ")
+                            (substitute-command-keys "\\[vellumory-export-marked-pages]"))
+                  "No pages marked")))
 
 ;;;###autoload
 (defun vellumory-mark-page (&optional page)
@@ -192,10 +192,11 @@ it led to."
   (vellumory--history-refresh-buffers)
   (when (fboundp (quote vellumory--details-refresh-buffers)) (vellumory--details-refresh-buffers))
   (let ((node (alist-get 'node result)))
-    (message (if (alist-get 'changed result)
-                 (format "%s · state %d (undo with %s)" (alist-get 'label node) (alist-get 'index node)
-                         (substitute-command-keys "\\[vellumory-undo]"))
-               "Already in that state"))))
+    ;; Never the format string itself: a label may hold a % sign (an opacity, a file name).
+    (message "%s" (if (alist-get 'changed result)
+                      (format "%s · state %d (undo with %s)" (alist-get 'label node) (alist-get 'index node)
+                              (substitute-command-keys "\\[vellumory-undo]"))
+                    "Already in that state"))))
 
 (defun vellumory--edit (operation)
   "Apply OPERATION (an alist) to the visited document.

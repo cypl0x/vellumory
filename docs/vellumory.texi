@@ -171,6 +171,7 @@ Annotations and forms
 * Marking selected text::
 * Notes::
 * Listing@comma{} editing and deleting: Listing editing and deleting. 
+* Changing and moving annotations on the page::
 * What annotations cannot do yet::
 * Filling in forms::
 
@@ -2844,6 +2845,7 @@ other: it is recorded in the document's history and can be undone (see
 * Marking selected text::
 * Notes::
 * Listing@comma{} editing and deleting: Listing editing and deleting. 
+* Changing and moving annotations on the page::
 * What annotations cannot do yet::
 * Filling in forms::
 @end menu
@@ -2926,6 +2928,16 @@ Show the annotation in the
 @kindex e
 @findex vellumory-annotation-list-edit
 Replace the annotation's text.
+@item @kbd{c} (@code{vellumory-annotation-list-color})
+@kindex c
+@findex vellumory-annotation-list-color
+Give the annotation another
+  colour: a colour name or @samp{#RRGGBB}.
+@item @kbd{o} (@code{vellumory-annotation-list-opacity})
+@kindex o
+@findex vellumory-annotation-list-opacity
+Make it more or less
+  see-through@comma{} in percent (100: not at all).
 @item @kbd{d} (@code{vellumory-annotation-list-delete})
 @kindex d
 @findex vellumory-annotation-list-delete
@@ -2939,6 +2951,28 @@ Read the annotations again.
 Hovering over an annotation on the page shows its text.  On the command
 line@comma{} @code{vellumory annotations FILE} prints them as JSON (see @ref{Inspecting from the command line}).
 
+@node Changing and moving annotations on the page
+@section Changing and moving annotations on the page
+
+@cindex moving annotations
+@cindex annotation colour
+@vindex vellumory-annotation-movable-types
+
+Drag a note to move it: while you drag@comma{} a green box shows where it will
+land@comma{} and it moves when you let go.  Notes@comma{} free text@comma{} file attachments@comma{}
+stamps@comma{} carets and sounds move by dragging
+(@code{vellumory-annotation-movable-types}); dragging over highlighted or
+underlined text selects the text@comma{} as elsewhere.
+
+Right-click an annotation for its menu: edit the text@comma{} change the colour
+or the opacity@comma{} delete it@comma{} or move it@comma{} where the next click puts its upper
+left corner.  That moves any annotation@comma{} highlights too.
+
+A move keeps the annotation exactly as it was drawn@comma{} by Vellumory or by
+another program: every coordinate it has shifts@comma{} and its appearance goes
+with it unchanged.  A new colour or opacity draws the annotation anew.
+Like every edit@comma{} each change is recorded and can be undone.
+
 @node What annotations cannot do yet
 @section What annotations cannot do yet
 
@@ -2946,12 +2980,13 @@ line@comma{} @code{vellumory annotations FILE} prints them as JSON (see @ref{Ins
 
 The kinds are highlight@comma{} underline@comma{} strike-out@comma{} squiggly underline and
 text notes.  There is no free-hand drawing@comma{} there are no shapes@comma{} and
-annotations cannot be moved or resized; editing changes their text only.
+annotations can be moved but not resized.
 
 Annotations respect the archival standard PDF/A: they are marked as
 printable@comma{} as PDF/A requires.  Highlights need transparency@comma{} which PDF/A-1
 forbids@comma{} so in a PDF/A-1 document Vellumory refuses to highlight and
-suggests an underline instead.
+suggests an underline instead.  For the same reason it refuses an opacity
+below 100% there@comma{} and a new colour for a highlight.
 
 @node Filling in forms
 @section Filling in forms
@@ -4273,7 +4308,7 @@ edit made in a script can be undone in Emacs@comma{} and the other way round.
 An operation is a JSON object whose @samp{op} field names it.  Pages are
 numbered from 1.
 
-@multitable {aaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+@multitable {aaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
 @headitem @samp{op}
 @tab Fields
 @item @samp{select}
@@ -4312,6 +4347,10 @@ numbered from 1.
 @tab @samp{page}@comma{} @samp{object}@comma{} @samp{contents}@comma{} @samp{time}
 @item @samp{annotation-delete}
 @tab @samp{page}@comma{} @samp{object}
+@item @samp{annotation-style}
+@tab @samp{page}@comma{} @samp{object}@comma{} @samp{color} (three numbers@comma{} or none)@comma{} optional @samp{opacity}@comma{} @samp{time}
+@item @samp{annotation-move}
+@tab @samp{page}@comma{} @samp{object}@comma{} @samp{dx} and @samp{dy} (points right and down)@comma{} @samp{time}
 @item @samp{syntax}
 @tab @samp{qdf}: the path of an edited QDF file
 @end multitable
@@ -5138,6 +5177,12 @@ The colour of each kind of
   annotation@comma{} as red@comma{} green and blue from 0 to 1.  Default: @code{((Highlight 1.0
   0.85 0.2) (Underline 0.1 0.45 0.9) (StrikeOut 0.85 0.15 0.15) (Squiggly 0.2
   0.65 0.3) (Text 1.0 0.85 0.2))}.
+@end defopt
+
+@defopt vellumory-annotation-movable-types
+The types of
+  annotation that dragging on the page moves.  Default: @code{("Text" "FreeText"
+  "FileAttachment" "Stamp" "Caret" "Sound")}.
 @end defopt
 
 @node Presentations
