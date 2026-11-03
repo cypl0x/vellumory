@@ -194,6 +194,7 @@ Editing safely
 * Where the history lives::
 * Documents that cannot be edited::
 * Writing new files::
+* Printing::
 
 Org mode and @LaTeX{}
 
@@ -231,6 +232,7 @@ Customization
 * Page preview options::
 * Links and search::
 * Annotations::
+* Printing: Printing (1). 
 * Presentations::
 * Sync@TeX{}::
 * PDF syntax::
@@ -398,8 +400,6 @@ It never runs JavaScript embedded in documents.  It cannot show dynamic
 XFA forms@comma{} because MuPDF does not render them.
 @item
 It verifies digital signatures but cannot sign documents.
-@item
-It has no print command.  Print the file with your system's tools.
 @item
 It needs Emacs 29.1 or newer.  Exporting Org to accessible PDF needs
 Org 9.7 or newer (Emacs 30's@comma{} or Org from GNU ELPA).
@@ -3348,6 +3348,7 @@ in can be brought back exactly.
 * Where the history lives::
 * Documents that cannot be edited::
 * Writing new files::
+* Printing::
 @end menu
 
 @node How every edit is kept
@@ -3819,6 +3820,29 @@ this page@comma{} @code{x} extracts pages@comma{} @code{s} splits@comma{} @code{
 exports the marked pages@comma{} @code{U} clears the marks@comma{} @code{t} exports the text and @code{T}
 shows the text of this page.  The right-click menu on a page offers
 exporting it and marking it.
+
+@node Printing
+@section Printing
+
+@cindex printing
+@findex vellumory-print
+@vindex vellumory-print-options
+
+@table @asis
+@item @kbd{M-x vellumory-print}
+@findex vellumory-print
+Print the document with @code{lp} from CUPS@comma{} on
+  Linux and macOS alike.  Choose the printer (the CUPS default first) and the pages:
+  all@comma{} this page@comma{} the marked pages@comma{} or a list such as @samp{1-4@comma{}7}.  A numeric
+  prefix argument gives the number of copies: @code{C-u 3 M-x vellumory-print}
+  prints three.
+@end table
+
+The File menu's Print Buffer@comma{} the Document menu@comma{} the right-click menu and
+the export menu (@code{P}) print too.  @code{vellumory-print-options} holds job options
+for every print@comma{} as @code{lp -o} takes them: @samp{sides=two-sided-long-edge} prints
+on both sides@comma{} @samp{media=a4} on A4 paper.  Documents converted to PDF print
+as PDF; other formats do not print.
 
 @node Comparing versions
 @chapter Comparing versions
@@ -4852,6 +4876,7 @@ A small example:
 * Page preview options::
 * Links and search::
 * Annotations::
+* Printing: Printing (1). 
 * Presentations::
 * Sync@TeX{}::
 * PDF syntax::
@@ -5197,6 +5222,24 @@ The colour of each kind of
 The types of
   annotation that dragging on the page moves.  Default: @code{("Text" "FreeText"
   "FileAttachment" "Stamp" "Caret" "Sound")}.
+@end defopt
+
+@node Printing (1)
+@section Printing
+
+@defopt vellumory-print-program
+The program that prints@comma{} called
+  as @code{lp} is.  Default: @code{"lp"} (CUPS).
+@end defopt
+
+@defopt vellumory-print-arguments
+Arguments for it before the
+  others@comma{} such as @samp{-h} and a server.  Default: @code{nil}.
+@end defopt
+
+@defopt vellumory-print-options
+Job options for every print@comma{}
+  each @samp{NAME=VALUE} as @code{lp -o} takes it.  Default: @code{nil}.
 @end defopt
 
 @node Presentations
@@ -5870,8 +5913,8 @@ them.  Reports from other systems are welcome.
 @node Can I print?
 @section Can I print?
 
-Not from Vellumory: there is no print command yet.  Print the file with
-your system's tools.
+Yes@comma{} with CUPS (see @ref{Printing (1)}): @code{M-x vellumory-print} chooses the printer@comma{}
+the pages and the copies.
 
 @node Can I sign a document?
 @section Can I sign a document?

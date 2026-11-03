@@ -1999,7 +1999,9 @@ Mouse events inside an area arrive prefixed with its id.")
                        ("C-c C-r" . vellumory-reflow)
                        ;; Back and forth along jumps, as pdf-tools' B and N.
                        ("B" . vellumory-history-back) ("N" . vellumory-history-forward)
-                       ("<remap> <write-file>" . vellumory-write-copy)))
+                       ("<remap> <write-file>" . vellumory-write-copy)
+                       ;; The File menu's Print Buffer prints the document.
+                       ("<remap> <print-buffer>" . vellumory-print)))
       (keymap-set map (car binding) (cdr binding)))
     (dolist (event '(wheel-up wheel-down mouse-4 mouse-5 wheel-left wheel-right))
       (define-key map (vector event) #'vellumory-wheel))
@@ -2066,6 +2068,7 @@ Mouse events inside an area arrive prefixed with its id.")
     ("Export"
      ["Extract pages…" vellumory-extract-pages] ["Split…" vellumory-split]
      ["Export text…" vellumory-export-text])
+    ["Print…" vellumory-print]
     ["Reload" vellumory-reload] ["Set bookmark…" bookmark-set]
     ["Reading mode (reflowed text)" vellumory-reflow]
     ["All commands…" vellumory-dispatch] ["Manual" vellumory-info]

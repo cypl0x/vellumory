@@ -149,6 +149,106 @@ exporting never changes it."
                                 nil nil nil (file-name-nondirectory (vellumory--export-default vellumory--marked-pages))))))
   (vellumory--export vellumory--marked-pages output))
 
+;;;; Printing
+
+(defcustom vellumory-print-program "lp"
+  "The program that prints: CUPS's lp, on Linux and macOS alike.
+It is called as PROGRAM [ARGUMENT]... [-d PRINTER] [-n COPIES] [-P PAGES]
+-t TITLE [-o OPTION]... -- FILE."
+  :type 'string :group 'vellumory)
+
+(defcustom vellumory-print-arguments nil
+  "Arguments for `vellumory-print-program' that come before the others.
+For example \"-h\" and a server, or \"-U\" and a user name."
+  :type '(repeat string) :group 'vellumory)
+
+(defcustom vellumory-print-options nil
+  "Job options for every print, each NAME=VALUE as lp's -o takes it.
+For example \"sides=two-sided-long-edge\" prints on both sides, \"media=a4\"
+on A4 paper."
+  :type '(repeat string) :group 'vellumory)
+
+(defun vellumory--printers ()
+  "The printers CUPS offers, its default first; nil without lpstat."
+  (when (executable-find "lpstat")
+    (let ((default (with-temp-buffer
+                     (when (zerop (call-process "lpstat" nil t nil "-d"))
+                       (and (string-match ": *\\([^ \n]+\\)" (buffer-string)) (match-string 1 (buffer-string))))))
+          (all (with-temp-buffer
+                 (when (zerop (call-process "lpstat" nil t nil "-e"))
+                   (split-string (buffer-string) "\n" t)))))
+      (delete-dups (delq nil (cons default all))))))
+
+(defun vellumory--page-list (pages)
+  "PAGES, one-based and ascending, as lp's page list: ranges joined by commas."
+  (let (ranges)
+    (dolist (page pages)
+      (if (and ranges (= page (1+ (cdar ranges)))) (setcdr (car ranges) page) (push (cons page page) ranges)))
+    (mapconcat (lambda (range) (if (= (car range) (cdr range)) (number-to-string (car range))
+                                 (format "%d-%d" (car range) (cdr range))))
+               (nreverse ranges) ",")))
+
+(defun vellumory--print-file ()
+  "The PDF to print: this document's file, or its conversion to PDF."
+  (let ((file (vellumory--read-file)))
+    (unless (with-temp-buffer
+              (set-buffer-multibyte nil)
+              (insert-file-contents-literally file nil 0 1024)
+              (search-forward "%PDF-" nil t))
+      (user-error "Only PDF documents print: %s is not one" (file-name-nondirectory file)))
+    file))
+
+(defun vellumory--read-print-pages ()
+  "Read the pages to print: all, this page, the marked ones, or a list."
+  (let* ((current (1+ (or vellumory--current-page 0)))
+         (choices `(("all" . nil) (,(format "this page (%d)" current) . (,current))
+                    ,@(and vellumory--marked-pages
+                           `((,(format "the marked pages (%s)" (vellumory--page-list vellumory--marked-pages))
+                              . ,vellumory--marked-pages)))))
+         (answer (completing-read "Pages (all, this page, marked, or such as 1-4,7): " choices nil nil nil nil
+                                  "all")))
+    (if-let* ((choice (assoc answer choices))) (cdr choice)
+      (sort (delete-dups (vellumory--parse-pages answer)) #'<))))
+
+;;;###autoload
+(defun vellumory-print (printer pages copies)
+  "Print PAGES (one-based, ascending; nil: all) of this document on PRINTER.
+COPIES of it.  Interactively, choose the printer (CUPS's default first) and
+the pages: all, this page, the marked pages, or a list such as 1-4,7.  A
+numeric prefix argument gives the copies.  `vellumory-print-options' holds
+options for every job, such as printing on both sides."
+  (interactive
+   (progn
+     (vellumory--print-file)
+     (unless (executable-find vellumory-print-program)
+       (user-error "No %s to print with: install CUPS, or set `vellumory-print-program'" vellumory-print-program))
+     (let ((printers (vellumory--printers)))
+       (list (and printers (completing-read (format-prompt "Printer" (car printers)) printers nil t nil nil
+                                            (car printers)))
+             (vellumory--read-print-pages)
+             (prefix-numeric-value current-prefix-arg)))))
+  (let ((file (vellumory--print-file))
+        (output (generate-new-buffer " *vellumory-print*")))
+    (make-process
+     :name "vellumory-print" :buffer output :noquery t :connection-type 'pipe
+     :command `(,vellumory-print-program ,@vellumory-print-arguments ,@(and printer (list "-d" printer))
+                ,@(and copies (> copies 1) (list "-n" (number-to-string copies)))
+                ,@(and pages (list "-P" (vellumory--page-list pages)))
+                "-t" ,(file-name-nondirectory file)
+                ,@(mapcan (lambda (option) (list "-o" option)) vellumory-print-options)
+                "--" ,file)
+     :sentinel
+     (lambda (process _event)
+       (unless (process-live-p process)
+         (let ((said (with-current-buffer output (string-trim (buffer-string)))))
+           (kill-buffer output)
+           (message "%s" (if (zerop (process-exit-status process))
+                             (format "Printing %s%s%s: %s" (if pages (format "pages %s" (vellumory--page-list pages)) "all pages")
+                                     (if printer (format " on %s" printer) "")
+                                     (if (and copies (> copies 1)) (format ", %d copies" copies) "")
+                                     said)
+                           (format "Vellumory: %s failed: %s" vellumory-print-program said)))))))))
+
 (defun vellumory--cli (args callback &optional buffer input)
   "Run the worker executable with ARGS; call CALLBACK with its parsed JSON.
 Errors are reported as messages.  BUFFER receives the reload afterwards.

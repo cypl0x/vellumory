@@ -347,6 +347,8 @@ Extracting pages (=e x=), splitting (=e s=), exporting text (=e t=) and
 exporting pages you mark in the previews or from the right-click menu
 write new files and leave the document alone.  A read-only document can
 still be copied for editing with =C-x C-w= (=vellumory-write-copy=).
+=M-x vellumory-print= prints with CUPS: the printer, the pages (all, this
+one, the marked ones, or a list) and the copies.
 
 *Comparing versions* (=d=): pages are paired by their text, so an inserted
 page does not make every later page differ; added words are highlighted
@@ -513,8 +515,8 @@ What pdf-tools still does that Vellumory does not is in the next section.
 - *doc-tools* renders every page when a file opens, so its scrolling is
   smooth too: worst step 7.0–9.5 ms against Vellumory's 6.1–6.6 ms.
 - *Vellumory* needs a worker you build yourself today, has been used only
-  on Linux (CI also runs its tests, graphical ones included, on macOS), has
-  no print command, and is young (0.1.2).  Of the desktop readers,
+  on Linux (CI also runs its tests, graphical ones included, on macOS),
+  and is young (0.1.2).  Of the desktop readers,
   Evince holds 4–30 MiB less memory than Vellumory with Emacs counted, on
   a short paper; on a 5,019-page book Vellumory holds less.
 
@@ -1200,8 +1202,9 @@ can fix it, offers a button.
   it on a Mac yet.  Intel
   Macs are out: nixpkgs 26.11 dropped them.  Windows is untried.  Reports are
   welcome.
-- *Can I print or sign?*  Neither yet: print the file with your system's
-  tools; Vellumory verifies signatures but does not create them.
+- *Can I print or sign?*  Print, yes: =M-x vellumory-print= (or the File
+  menu's Print Buffer) sends the pages you choose to a CUPS printer.
+  Signing, not yet: Vellumory verifies signatures but does not create them.
 - *Why Lean for the worker?*  Lean 4 compiles to native code and is also
   a proof assistant: the render queue, the edit history, pixel
   clipping, argument passing and the comparison's alignment come with
@@ -1224,7 +1227,7 @@ can fix it, offers a button.
 - The worker is built from source; Nix is the only tested way.  No prebuilt
   binaries and no package archive yet.  The straight.el, Elpaca,
   package-vc and Spacemacs recipes are untested.
-- No print command; no signing.
+- No signing.
 - Annotations: highlight, underline, strike-out, squiggly and text notes
   only; no free-hand drawing, shapes or inline text; they can be moved but
   not resized.

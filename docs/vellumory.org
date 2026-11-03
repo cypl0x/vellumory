@@ -125,7 +125,6 @@ not surprised later.
 - It never runs JavaScript embedded in documents.  It cannot show dynamic
   XFA forms, because MuPDF does not render them.
 - It verifies digital signatures but cannot sign documents.
-- It has no print command.  Print the file with your system's tools.
 - It needs Emacs 29.1 or newer.  Exporting Org to accessible PDF needs
   Org 9.7 or newer (Emacs 30's, or Org from GNU ELPA).
 - It is young.  This manual describes version 0.1.2, its third release.
@@ -2435,6 +2434,24 @@ exports the marked pages, ~U~ clears the marks, ~t~ exports the text and ~T~
 shows the text of this page.  The right-click menu on a page offers
 exporting it and marking it.
 
+** Printing
+#+cindex: printing
+#+findex: vellumory-print
+#+vindex: vellumory-print-options
+
+#+attr_texinfo: :compact t
+- Key: M-x vellumory-print :: Print the document with ~lp~ from CUPS, on
+  Linux and macOS alike.  Choose the printer (the CUPS default first) and
+  the pages: all, this page, the marked pages, or a list such as =1-4,7=.
+  A numeric prefix argument gives the number of copies: ~C-u 3 M-x
+  vellumory-print~ prints three.
+
+The File menu's Print Buffer, the Document menu, the right-click menu and
+the export menu (~P~) print too.  ~vellumory-print-options~ holds job options
+for every print, as ~lp -o~ takes them: =sides=two-sided-long-edge= prints
+on both sides, =media=a4= on A4 paper.  Documents converted to PDF print
+as PDF; other formats do not print.
+
 * Comparing versions
 :PROPERTIES:
 :DESCRIPTION: A semantic comparison of two versions of a document.
@@ -3342,6 +3359,15 @@ reason.
   annotation that dragging on the page moves.  Default: ~("Text" "FreeText"
   "FileAttachment" "Stamp" "Caret" "Sound")~.
 
+** Printing
+
+- User Option: vellumory-print-program :: The program that prints, called
+  as ~lp~ is.  Default: ~"lp"~ (CUPS).
+- User Option: vellumory-print-arguments :: Arguments for it before the
+  others, such as =-h= and a server.  Default: ~nil~.
+- User Option: vellumory-print-options :: Job options for every print,
+  each =NAME=VALUE= as ~lp -o~ takes it.  Default: ~nil~.
+
 ** Presentations
 
 - User Option: vellumory-present-monitor :: Where to present: ~other~ prefers
@@ -3744,8 +3770,8 @@ Intel Macs are out, since nixpkgs 26.11 dropped
 them.  Reports from other systems are welcome.
 
 ** Can I print?
-Not from Vellumory: there is no print command yet.  Print the file with
-your system's tools.
+Yes, with CUPS (see [[*Printing]]): ~M-x vellumory-print~ chooses the printer,
+the pages and the copies.
 
 ** Can I sign a document?
 No.  Vellumory verifies signatures, but cannot create them.

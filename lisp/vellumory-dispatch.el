@@ -91,7 +91,9 @@
     ("U" "Clear the marks" vellumory-unmark-all :transient t)]
    ["Text"
     ("t" "Export text" vellumory-export-text)
-    ("T" "Text of this page" vellumory-page-text)]])
+    ("T" "Text of this page" vellumory-page-text)]
+   ["Paper"
+    ("P" "Print…" vellumory-print)]])
 
 ;;;###autoload (autoload 'vellumory-dispatch "vellumory-dispatch" nil t)
 (transient-define-prefix vellumory-dispatch-reflow ()

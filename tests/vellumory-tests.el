@@ -2553,6 +2553,49 @@ share of it; in a PDF they zoom."
               (should (> vellumory--zoom zoom))))
         (kill-buffer reader)))))
 
+(ert-deftest vellumory-print-hands-lp-the-pages-printer-and-copies ()
+  "Printing calls CUPS's lp with the printer, copies, page list, title and
+options; the pages compact into ranges; documents other than PDF refuse."
+  (should (equal (vellumory--page-list '(1 2 3 5 7 8)) "1-3,5,7-8"))
+  (should (equal (vellumory--page-list '(4)) "4"))
+  (let* ((program (getenv "VELLUMORY_TEST_PROGRAM")) (source (getenv "VELLUMORY_TEST_PDF"))
+         (echo (and program (expand-file-name "vellumoryTests" (file-name-directory program))))
+         (directory (make-temp-file "vellumory-print-" t))
+         (vellumory-program program)
+         (vellumory-state-directory (expand-file-name "state" directory))
+         ;; The test binary prints its arguments as JSON: lp's place.
+         (vellumory-print-program echo)
+         (vellumory-print-arguments '("--echo-args"))
+         (vellumory-print-options '("sides=two-sided-long-edge"))
+         (said nil))
+    (skip-unless (and program source (file-executable-p echo)))
+    (unwind-protect
+        (let ((reader (vellumory-open source t)))
+          (with-current-buffer reader
+            (should (vellumory-test--wait (lambda () vellumory--pages)))
+            (cl-letf (((symbol-function 'message) (lambda (format &rest args) (setq said (apply #'format format args)))))
+              (vellumory-print "Office" '(1 2 3) 2)
+              (should (vellumory-test--wait (lambda () said))))
+            (should (string-prefix-p "Printing pages 1-3 on Office, 2 copies: " said))
+            ;; What lp was given, as the stub printed it back.
+            (should (equal (json-parse-string (substring said (length "Printing pages 1-3 on Office, 2 copies: ")))
+                           (vconcat (list "-d" "Office" "-n" "2" "-P" "1-3" "-t" (file-name-nondirectory source)
+                                          "-o" "sides=two-sided-long-edge" "--" source))))
+            ;; All pages, the default printer, one copy: no options for them.
+            (setq said nil)
+            (cl-letf (((symbol-function 'message) (lambda (format &rest args) (setq said (apply #'format format args)))))
+              (vellumory-print nil nil 1)
+              (should (vellumory-test--wait (lambda () said))))
+            (should (string-prefix-p "Printing all pages: " said))
+            (kill-buffer reader))
+          ;; Not a PDF: refused before anything runs.
+          (let ((text (expand-file-name "notes.txt" directory)))
+            (with-temp-file text (insert "plain text"))
+            (with-temp-buffer
+              (setq-local vellumory--source-file text)
+              (should-error (vellumory--print-file) :type 'user-error))))
+      (delete-directory directory t))))
+
 (ert-deftest vellumory-mobi-and-office-without-converters ()
   "MOBI books visit as documents; office documents too when no converter is
 installed, MuPDF reading them itself."
