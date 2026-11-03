@@ -4500,6 +4500,11 @@ The reader's own files (saved places@comma{} and the cache of remote documents
 and conversions) follow @code{vellumory-state-directory} and
 @code{vellumory-cache-directory} instead (see @ref{Customization}).
 
+Each render thread costs about 2 MB of memory before it renders anything:
+Lean's allocator prepares a page for every small object size on every
+thread.  With fewer threads@comma{} rendering many strips at once takes longer;
+@samp{VELLUMORY_RENDER_THREADS=2} keeps about 8 MB less than six threads.
+
 @node Evil and Doom Emacs
 @chapter Evil and Doom Emacs
 

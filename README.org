@@ -665,7 +665,11 @@ its next page then rendered in 15 ms, as the first ones did.  Sampled
 45 seconds after the steps instead (2026-11-03, four runs, =--rest 45=),
 past that rest, Vellumory and Evince were level by PSS, 123.5–133.7 MiB
 against 125.4–128.4 (Vellumory lower in one run, level in two, higher in
-one); by RSS Evince stayed smaller, 142–144 MiB against 150–160.  Idle
+one); by RSS Evince stayed smaller, 142–144 MiB against 150–160.  Of
+Vellumory's share, about 14 MiB are the worker's seven threads (six
+render, one does other document work): Lean's allocator gives every thread
+about 2 MiB before it does anything (=VELLUMORY_RENDER_THREADS= sets how
+many render).  Idle
 with a document open, Emacs used 0.02–0.03 s of CPU a minute (an empty
 Emacs 0.00) and the worker none: the view is checked five times a
 second while you read, once a second after five quiet seconds.  On a
