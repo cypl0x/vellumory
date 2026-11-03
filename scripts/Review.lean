@@ -755,7 +755,7 @@ def treeUsage (ticks : Float) (pid : Nat) : IO Usage := do
   return total
 
 /-- During the steps: CPU seconds of the viewer's processes and of the X
-    server; the viewer's resident set right after them, three seconds later
+    server; the viewer's resident set right after them, some seconds later
     (reading has rested: a viewer may free memory then), and its peak, KiB. -/
 structure StepUsage where
   viewer : Float
@@ -773,9 +773,10 @@ structure StepUsage where
     left margin (never on a link or text). REFOCUS: after a jump the keys stay
     in the page entry until a click on the page. Every input is marked, so that
     a dialog, a click or typing never counts as the previous action's response.
-    VIEWER's processes and the X server's (SERVER) are measured over the steps. -/
+    VIEWER's processes and the X server's (SERVER) are measured over the steps,
+    and the memory again SETTLE seconds after them. -/
 def readByInput (display window : String) (prompt : Array (Array String)) (refocus : Bool)
-    (viewer : Nat) (server : Option Nat) (ticks : Float) : IO (Array (String × Float) × StepUsage) := do
+    (viewer : Nat) (server : Option Nat) (ticks : Float) (settle : Nat := 3) : IO (Array (String × Float) × StepUsage) := do
   let xdotool ← IO.Process.spawn {
     cmd := "xdotool"
     args := #["-"]
@@ -821,7 +822,7 @@ def readByInput (display window : String) (prompt : Array (Array String)) (refoc
       IO.sleep pause
   let after ← treeUsage ticks viewer
   let serverAfter ← server.mapM (processUsage ticks)
-  IO.sleep 3000
+  IO.sleep (UInt32.ofNat (settle * 1000))
   let rested ← treeUsage ticks viewer
   xdotool.kill
   let _ ← xdotool.wait
@@ -884,7 +885,7 @@ structure ScreenRun where
 
 /-- Read FILE in desktop reader D on DISPLAY, by X input. -/
 def desktopViewer (root : System.FilePath) (display file : String) (d : Desktop) (server : Option Nat)
-    (ticks : Float) : IO ScreenRun := do
+    (ticks : Float) (rest : Nat := 3) : IO ScreenRun := do
   let dir := root / "target/review/screen"
   let home := dir / s!"{d.name}-home"
   if ← home.pathExists then IO.FS.removeDirAll home
@@ -939,7 +940,7 @@ def desktopViewer (root : System.FilePath) (display file : String) (d : Desktop)
     if !(geometry.splitOn "\n").any (·.startsWith "WIDTH=12") then
       let _ ← xdo display #["windowsize", window, "1280", "1000", "windowmove", window, "0", "0"]
     IO.sleep (UInt32.ofNat (5000 - min 4000 (((← wallClock) - opened) * 1000).toUInt64.toNat))
-    let (marks, usage) ← readByInput display window d.prompt d.refocus pid server ticks
+    let (marks, usage) ← readByInput display window d.prompt d.refocus pid server ticks rest
     let frames ← recordedFrames d.name recording md5
     return { results := responses frames (#[("open", opened)] ++ marks), usage }
   finally
@@ -957,7 +958,7 @@ def readMarks (log : System.FilePath) : IO (Array (String × Float)) := do
 /-- Read FILE in VIEWER in a fresh EMACS on DISPLAY: the script in Lisp, or
     with INPUT the open in Lisp and the rest as X input (`readByInput`). -/
 def screenViewer (root : System.FilePath) (emacs display viewer file : String) (setup : String)
-    (input : Bool) (server : Option Nat) (ticks : Float) : IO ScreenRun := do
+    (input : Bool) (server : Option Nat) (ticks : Float) (rest : Nat := 3) : IO ScreenRun := do
   let dir := root / "target/review/screen"
   IO.FS.createDirAll dir
   -- One daemon per display: benchmarks on other displays keep theirs.
@@ -989,7 +990,7 @@ def screenViewer (root : System.FilePath) (emacs display viewer file : String) (
       let window := ((found.splitOn "\n").head!).trimAscii.toString
       -- Its page prompt: M-g g, bound to a go-to-page command by Vellumory,
       -- pdf-tools and DocView alike.
-      let (marks, usage) ← readByInput display window #[#["key", "alt+g", "g"]] false pid server ticks
+      let (marks, usage) ← readByInput display window #[#["key", "alt+g", "g"]] false pid server ticks rest
       let frames ← recordedFrames viewer recording md5
       return { results := responses frames ((← readMarks log) ++ marks), usage }
     let _ ← client s!"(progn (select-frame-by-name \"Screen bench\") (screen-bench-run '{viewer} {repr file} {repr log.toString}))"
@@ -1044,6 +1045,7 @@ def screenBench (p : Parsed) : IO UInt32 := do
   let only := (p.flag? "only").map (·.as! String)
   let input := p.hasFlag "keys"
   let runs := (p.flag? "runs").map (·.as! Nat) |>.getD 1
+  let rest := (p.flag? "rest").map (·.as! Nat) |>.getD 3
   -- CPU time comes in clock ticks; the X server's from its lock file.
   let ticks := ((← IO.Process.output { cmd := "getconf", args := #["CLK_TCK"] }).stdout.trimAscii.toString.toNat?.getD 100).toFloat
   let server ← try pure ((← IO.FS.readFile s!"/tmp/.X{display.drop 1}-lock").trimAscii.toString.toNat?)
@@ -1061,8 +1063,8 @@ def screenBench (p : Parsed) : IO UInt32 := do
       if let some names := only then
         unless (names.splitOn ",").contains viewer do continue
       let measure := match job with
-        | .inl (program, setup) => screenViewer root program display viewer file setup input server ticks
-        | .inr d => desktopViewer root display file d server ticks
+        | .inl (program, setup) => screenViewer root program display viewer file setup input server ticks rest
+        | .inr d => desktopViewer root display file d server ticks rest
       let measured ← try measure catch e => do IO.println s!"{viewer}: {e}"; continue
       all := all.push (viewer, figures measured)
       let results := measured.results
@@ -1112,6 +1114,7 @@ def screenBenchCmd : Cmd := `[Cli|
     steps; "Also list each reading step's first and last change."
     keys; "Viewers in Emacs too get the reading as X input (M-g g, Down, wheel), as the desktop readers do."
     runs : Nat; "Measure every viewer this many times, interleaved, then print each figure's range."
+    rest : Nat; "Seconds after the steps before memory is sampled again (default 3)."
   ARGS:
     file : String; "Document to read."
     emacs : String; "Emacs for the viewers inside Emacs (EAF brings its own)."

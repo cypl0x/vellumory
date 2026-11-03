@@ -417,7 +417,10 @@ runs on one paper, byte-compiled, twice): 149–172 MiB with Emacs itself
 144–145.  On a 5,019-page book Vellumory 301–318 MiB, Evince 324–325.  Found by
 measuring Emacs and the worker apart, heaptrack and the worker's mappings:
 freed memory kept by the C library (Emacs 528 MiB after 40 pages of ISO
-32000, 158 MiB once given back at rest) and a second buffer for every strip
+32000, 158 MiB once given back at rest) and a second buffer for every strip.
+Sampled 45 s after reading, past the deep rest (2026-11-03, four runs):
+PSS level with Evince (123.5–133.7 against 125.4–128.4 MiB), RSS still above
+it (150–160 against 142–144)
 ** DONE macOS: the flake declares Apple silicon (every dependency evaluates
 there), the code avoids calls only Linux has (a sweep without /proc tested
 in a namespace that hides it) and Clang compiles the native code without a

@@ -516,9 +516,10 @@ What pdf-tools still does that Vellumory does not is in the next section.
   smooth too: worst step 7.0–9.5 ms against Vellumory's 6.1–6.6 ms.
 - *Vellumory* needs a worker you build yourself today, has been used only
   on Linux (CI also runs its tests, graphical ones included, on macOS),
-  and is young (0.1.2).  Of the desktop readers, Evince holds 4–30 MiB
-  less memory than Vellumory with Emacs counted, on a short paper; on a
-  5,019-page book Vellumory holds less.
+  and is young (0.1.2).  Of the desktop readers, Evince holds less memory
+  than Vellumory with Emacs counted on a short paper: 4–16 MiB by PSS just
+  after reading, level 45 seconds later, while its resident set stays
+  6–16 MiB smaller; on a 5,019-page book Vellumory holds less.
 
 ** Other and upcoming packages
 :PROPERTIES:
@@ -572,8 +573,8 @@ Every figure, run by run, is in [[file:docs/reader-validation.org][docs/reader-v
   includes EAF, which draws outside Emacs.
 - Run from the development shell:
   =lean --run scripts/Build.lean lake env lean --run scripts/Review.lean bench FILE=
-  and =... Review.lean screenbench FILE EMACS=.
-
+  and =... Review.lean screenbench FILE EMACS= (=--rest N= samples memory
+  again N seconds after the steps; 3 by default).
 ** Results in Emacs
 :PROPERTIES:
 :CUSTOM_ID: results-in-emacs
@@ -660,7 +661,11 @@ more than Evince: 5–30 MiB by RSS, 4–16 MiB by PSS at rest.  After 30
 seconds without reading (=vellumory-deep-rest-delay=) the worker also
 drops what it keeps to render quickly, display lists and decoded
 images: a scanned document of 10 pages went from 142 MB to 58 MB, and
-its next page then rendered in 15 ms, as the first ones did.  Idle
+its next page then rendered in 15 ms, as the first ones did.  Sampled
+45 seconds after the steps instead (2026-11-03, four runs, =--rest 45=),
+past that rest, Vellumory and Evince were level by PSS, 123.5–133.7 MiB
+against 125.4–128.4 (Vellumory lower in one run, level in two, higher in
+one); by RSS Evince stayed smaller, 142–144 MiB against 150–160.  Idle
 with a document open, Emacs used 0.02–0.03 s of CPU a minute (an empty
 Emacs 0.00) and the worker none: the view is checked five times a
 second while you read, once a second after five quiet seconds.  On a
