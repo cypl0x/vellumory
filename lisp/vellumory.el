@@ -574,7 +574,11 @@ with a gap row between spreads."
          ;; a layout quadratic, 1.3 s on a 5,019-page book.
          (final (car (last spreads))) (count 0)
          (page-rows (make-vector pages 0)) (spread-of (make-vector pages nil))
-         rows)
+         (newline (propertize "\n" 'line-height t))
+         ;; Each strip's text, newest first, inserted at once at the end:
+         ;; 50,000 inserts took twice as long (75 against 35 ms for 25,000
+         ;; strips).  Every piece is one character, so positions are counted.
+         text position rows)
     (setq vellumory--margin (max 0 (/ (- body (vellumory--row-width)) 2)))
     ;; A bare stretch inherits the default font's descent and would add it to
     ;; every strip.  One pixel of pure ascent never exceeds an image line.
@@ -585,6 +589,7 @@ with a gap row between spreads."
                      (propertize " " 'face 'vellumory-desk
                                  'display `(space :width (,vellumory--margin) :height (1) :ascent 100))))
     (erase-buffer)
+    (setq position (point))
     (dolist (spread spreads)
       (let* ((present (delq nil (copy-sequence spread)))
              (heights (mapcar (lambda (page) (and page (vellumory--page-height page))) spread))
@@ -600,40 +605,47 @@ with a gap row between spreads."
                            (dolist (h heights bottom)
                              (when (and h (> h top) (< h bottom)) (setq bottom h)))))
                  (row (vellumory--row-create :page (car present) :top top :bottom bottom
-                                             :position (point) :offset offset))
+                                             :position position :offset offset))
                  (column 0)
                  tiles)
             (cl-loop for page in spread
                      for page-height in heights
-                     do (when (> column 0) (insert gutter))
+                     do (when (> column 0) (push gutter text) (cl-incf position))
                      (if (and page (< top page-height))
                          (let ((left 0))
                            (while (< left vellumory--width)
                              (let* ((right (min vellumory--width (+ left tile-width)))
                                     (tile (vellumory--tile-create :row row :page page :left left :right right
-                                                                  :position (point))))
-                               (insert (propertize " " 'display (vellumory--placeholder (- right left)
-                                                                                        (- bottom top))
-                                                   'face paper 'vellumory-tile tile))
+                                                                  :position position)))
+                               (push (propertize " " 'display (vellumory--placeholder (- right left)
+                                                                                      (- bottom top))
+                                                 'face paper 'vellumory-tile tile)
+                                     text)
+                               (cl-incf position)
                                (push tile tiles)
                                (setq left right))))
                        ;; The empty side of a spread, or below its shorter page.
-                       (insert (propertize " " 'display (vellumory--placeholder vellumory--width (- bottom top))
-                                           'face 'vellumory-desk)))
+                       (push (propertize " " 'display (vellumory--placeholder vellumory--width (- bottom top))
+                                         'face 'vellumory-desk)
+                             text)
+                       (cl-incf position))
                      (cl-incf column))
             (setf (vellumory--row-tiles row) (vconcat (nreverse tiles)))
-            (insert (propertize "\n" 'line-height t))
+            (push newline text)
+            (cl-incf position)
             (push row rows)
             (cl-incf count)
             (setq offset (+ offset (- bottom top)) top bottom)))
         (unless (eq spread final)
           (push (vellumory--row-create :page (car (last present)) :top height :bottom height
-                                       :position (point) :offset offset :gap t :tiles [])
+                                       :position position :offset offset :gap t :tiles [])
                 rows)
           (cl-incf count)
-          (insert (propertize " " 'display (vellumory--placeholder (vellumory--row-width) vellumory-page-gap))
-                  (propertize "\n" 'line-height t))
+          (push (propertize " " 'display (vellumory--placeholder (vellumory--row-width) vellumory-page-gap)) text)
+          (push newline text)
+          (cl-incf position 2)
           (cl-incf offset vellumory-page-gap))))
+    (insert (apply #'concat (nreverse text)))
     (setq vellumory--rows (vconcat (nreverse rows))
           vellumory--page-rows page-rows
           vellumory--spread-of spread-of)

@@ -245,8 +245,11 @@ previews in its place."
   "Show the contents sidebar and return its window; the reader keeps focus."
   (unless (buffer-live-p vellumory--outline-buffer)
     (setq vellumory--outline-buffer (generate-new-buffer (format "*Contents: %s*" (buffer-name))))
-    (with-current-buffer vellumory--outline-buffer (vellumory-outline-mode)))
-  (vellumory--update-outline-buffer)
+    (with-current-buffer vellumory--outline-buffer (vellumory-outline-mode))
+    ;; Built once: each change of the contents rebuilds it while it lives
+    ;; (`vellumory--load-navigation'), so showing it again keeps its folds
+    ;; and costs nothing (a rebuild took 80 ms for 3,815 entries).
+    (vellumory--update-outline-buffer))
   (vellumory--show-sidebar vellumory--outline-buffer 34))
 
 (defun vellumory-outline ()

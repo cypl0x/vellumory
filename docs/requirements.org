@@ -14,6 +14,13 @@ tmpfs PPM, proved scheduler. Native, ERT and GUI suites; benchmark in
 ** DONE Search with renderer highlights; selection (mouse, words, lines, pages)
 ** DONE Links with hover help, keyboard hints, back/forward history
 ** DONE Watch and reload; never write the layout; visit without reading bytes
+** DONE Window changes on long documents (reported from the author's laptop):
+a layout of the 5,019-page book took 1.6 s there on 0.1.0, walking lists once
+per spread and page; linear since 2026-10-30 (750 → 120 ms here), and since
+2026-11-03 its 25,000 strips go into the buffer in one insertion (31–54 ms;
+50,000 inserts were twice as long).  The contents sidebar is built once, not
+on every showing (3,815 entries, 80 ms): toggling it costs 50–66 ms, was
+100–335.  A test checks every row's line and tile position, zoomed too
 ** DONE Themes for dark Emacs themes (tint, luminance inversion)
 ** DONE Comparative measurements: faster open, lower input latency, far better tails
 (re-measured 2026-10-28 after the strip-height and bidi changes against pdf-tools,

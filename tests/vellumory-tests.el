@@ -1249,13 +1249,14 @@ Names, not forms: each Emacs version writes them a little differently."
   "Each page's first row is where its tiles begin, with and without spreads;
  gap rows separate spreads and do not end the document.  The layout counts
 rows as it goes (walking the list per page made it quadratic: 1.3 s on a
-5,019-page book)."
+5,019-page book).  Each row begins a line and each tile is the character
+its position names: the layout counts positions, inserting the text once."
   (with-temp-buffer
     (setq vellumory--pages (vconcat (cl-loop for i below 301
                                              collect `((width . 600.0) (height . ,(if (zerop (% i 7)) 900.0 800.0)))))
-          vellumory--zoom 1.0 vellumory--labels [])
-    (dolist (spread '(nil book pairs))
-      (setq vellumory--spread spread)
+          vellumory--labels [])
+    (pcase-dolist (`(,spread . ,zoom) '((nil . 1.0) (book . 1.0) (pairs . 1.0) (nil . 4.0) (book . 4.0)))
+      (setq vellumory--spread spread vellumory--zoom zoom)
       (vellumory--layout-1)
       (let ((pages-of (lambda (index) (mapcar #'vellumory--tile-page (vellumory--row-tiles (aref vellumory--rows index))))))
         (dotimes (page (length vellumory--pages))
@@ -1263,7 +1264,16 @@ rows as it goes (walking the list per page made it quadratic: 1.3 s on a
             (should (memq page (funcall pages-of index)))
             (should (or (zerop index) (not (memq page (funcall pages-of (1- index))))))))
         (should-not (vellumory--row-gap (aref vellumory--rows (1- (length vellumory--rows)))))
-        (should (= (cl-count-if #'vellumory--row-gap vellumory--rows) (1- (length (vellumory--spreads)))))))))
+        (should (= (cl-count-if #'vellumory--row-gap vellumory--rows) (1- (length (vellumory--spreads)))))
+        (cl-loop for row across vellumory--rows for index from 0
+                 do (should (= (vellumory--row-position row)
+                               (save-excursion (goto-char (vellumory--row-position row)) (line-beginning-position))))
+                 (should (= (count-lines (point-min) (vellumory--row-position row)) index))
+                 (cl-loop for tile across (vellumory--row-tiles row)
+                          do (should (eq (get-text-property (vellumory--tile-position tile) 'vellumory-tile) tile))))
+        (should (= (count-lines (point-min) (point-max)) (length vellumory--rows)))
+        ;; Zoomed past the window, rows hold several tiles side by side.
+        (when (> zoom 1) (should (cl-some (lambda (row) (> (length (vellumory--row-tiles row)) 2)) vellumory--rows)))))))
 
 (ert-deftest vellumory-spread-layout-and-navigation ()
   (with-temp-buffer
