@@ -913,8 +913,9 @@ old one for its /D seconds, then the page alone."
 (ert-deftest vellumory-gui-presentation-blends-pages ()
   "Fade, Dissolve, Glitter and Fly draw frames the worker composes from both
 pages: mid-way a fade shows a mix of the colours, a dissolve some pixels of each
-page and nothing else, a glitter or a fly from the left the new page on the left; each frame
-is dropped from the image cache once replaced, and the page ends alone."
+page and nothing else, a glitter from the left new pixels at the left edge only,
+a fly from the left the new page on the left; each frame is dropped from the
+image cache once replaced, and the page ends alone."
   (skip-unless (vellumory-gui--can-capture-p))
   (let* ((file (expand-file-name "target/review/slides.pdf" (getenv "VELLUMORY_REVIEW_ROOT")))
          (reader-frame (selected-frame)) buffer presentation)
@@ -980,10 +981,18 @@ is dropped from the image cache once replaced, and the page ends alone."
                                   (vellumory-gui--log "blend colours seen: %S" (seq-take (seq-uniq colours) 12)))
                                 (should (= (+ red green) (length colours)))
                                 (should (and (> red 30) (> green 30)))))))
-                ;; Red to yellow from the left: yellow on the left, red on the right.
+                ;; Red to yellow glittering from the left: its band of noise has
+                ;; reached the left edge, where some pixels are new (which ones the
+                ;; noise decides, per cell, so one pixel proves nothing), and not
+                ;; the right edge, still all red.
                 (midway 4 (lambda (at)
-                            (should (vellumory-gui--near (funcall at 0.03 0.5) '(255 255 0)))
-                            (should (vellumory-gui--near (funcall at 0.97 0.5) '(255 0 0)))))
+                            (let ((left (cl-loop for j below 20 collect (funcall at 0.03 (/ (+ j 0.5) 20))))
+                                  (right (cl-loop for j below 20 collect (funcall at 0.97 (/ (+ j 0.5) 20)))))
+                              (should (>= (cl-count '(255 255 0) left :test #'vellumory-gui--near) 3))
+                              (should (cl-every (lambda (c) (or (vellumory-gui--near c '(255 255 0))
+                                                                (vellumory-gui--near c '(255 0 0))))
+                                                left))
+                              (should (cl-every (lambda (c) (vellumory-gui--near c '(255 0 0))) right)))))
                 ;; Yellow to white flying in from the left, opaque: white on the left only.
                 (midway 5 (lambda (at)
                             (should (vellumory-gui--near (funcall at 0.03 0.5) '(255 255 255)))

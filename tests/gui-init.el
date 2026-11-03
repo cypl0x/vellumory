@@ -16,6 +16,19 @@
   (set-frame-size (selected-frame) 110 45)
   (set-face-attribute 'default nil :height 120)
   (tool-bar-mode -1)
+  ;; Cocoa can leave the tool bar shown when it is turned off while the first
+  ;; frame settles (the macOS runner did, once in five runs): the pixel tests
+  ;; read a frame without one.  An unchanged parameter is not set again, so
+  ;; it is turned on and off until the frame reports no tool bar.
+  (let ((deadline (+ (float-time) 10)))
+    (while (and (< (float-time) deadline) (> (or (cdr (alist-get 'tool-bar-size (frame-geometry))) 0) 0))
+      (message "The tool bar is still shown: hiding it again")
+      (set-frame-parameter nil 'tool-bar-lines 1)
+      (redisplay t)
+      (set-frame-parameter nil 'tool-bar-lines 0)
+      (let ((until (+ (float-time) 0.5)))
+        (while (< (float-time) until) (accept-process-output nil 0.05)))
+      (redisplay t)))
   (menu-bar-mode 1)
   (vellumory-open (expand-file-name "target/review/reader.pdf" root))
   (delete-other-windows))
