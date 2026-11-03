@@ -516,9 +516,9 @@ What pdf-tools still does that Vellumory does not is in the next section.
   smooth too: worst step 7.0–9.5 ms against Vellumory's 6.1–6.6 ms.
 - *Vellumory* needs a worker you build yourself today, has been used only
   on Linux (CI also runs its tests, graphical ones included, on macOS),
-  and is young (0.1.2).  Of the desktop readers,
-  Evince holds 4–30 MiB less memory than Vellumory with Emacs counted, on
-  a short paper; on a 5,019-page book Vellumory holds less.
+  and is young (0.1.2).  Of the desktop readers, Evince holds 4–30 MiB
+  less memory than Vellumory with Emacs counted, on a short paper; on a
+  5,019-page book Vellumory holds less.
 
 ** Other and upcoming packages
 :PROPERTIES:

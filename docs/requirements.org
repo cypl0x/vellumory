@@ -258,7 +258,10 @@ reproducible Doom on the user's exact Emacs (keys, wheel, which-key, modeline)
 ** DONE Text written on the page (FreeText, =a t= or the right-click menu), sized
 to its text and resized when edited; the font MuPDF leaves out (Helvetica)
 embedded in its appearance, re-embedded after every restyle, so PDF/A-1b and
--2b documents stay valid (veraPDF in the Lean suite)
+-2b documents stay valid (veraPDF in the Lean suite); in the user's Doom on :1 by
+real keys and mouse: =a t= and a click wrote text, a drag moved it, the
+right-click menu recoloured it, and =U= then =c= went back to the original
+bytes (same SHA-256) and forward again
 ** DONE Printing with CUPS (M-x vellumory-print, the File menu's Print Buffer,
 menus): printer, pages (all, this, marked, ranges) and copies; checked
 end to end against a user-run =cupsd= and =ippeveprinter= (job with
