@@ -138,7 +138,7 @@
    ["Go"
     ("g" "Page" vellumory-goto-page)
     ("l" "Page label" vellumory-goto-page-label)
-    ("h" "Heading" vellumory-goto-heading)
+    ("h" "Heading" vellumory-consult-heading)
     ("<" "First page" vellumory-first-page)
     (">" "Last page" vellumory-last-page)
     ("[" "Back" vellumory-history-back)

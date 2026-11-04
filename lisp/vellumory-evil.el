@@ -154,7 +154,7 @@ state."
     "/" #'vellumory-search "?" #'vellumory-evil-search-backward
     "n" #'vellumory-search-next "N" #'vellumory-search-previous
     "f" #'vellumory-follow-link "F" #'vellumory-follow-link
-    "o" #'vellumory-outline "O" #'vellumory-goto-heading "s" #'vellumory-sidebar-switch
+    "o" #'vellumory-outline "O" #'vellumory-consult-heading "s" #'vellumory-sidebar-switch
     "t" #'vellumory-thumbnails "T" #'vellumory-page-text "I" #'vellumory-details "V" #'vellumory-validate "gS" #'vellumory-syntax "D" #'vellumory-diff
     "y" #'vellumory-copy-selection
     "m" #'vellumory-point-to-register "'" #'vellumory-jump-to-register

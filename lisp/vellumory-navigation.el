@@ -38,6 +38,8 @@
 (defvar vellumory--file)
 (defvar vellumory--hash)
 (defvar vellumory--pages)
+(defvar vellumory--last-motion)
+(declare-function vellumory--remember-position "vellumory-select" ())
 (declare-function vellumory--rpc "vellumory" (method params callback))
 (declare-function vellumory--restore-position "vellumory" (position))
 (declare-function vellumory--refresh "vellumory" (&optional force))
@@ -119,6 +121,10 @@ the one-based entry number."
       (cond
        ((and (natnump page) (< page (length vellumory--pages)))
         (pop-to-buffer source)
+        ;; A jump, as a link's: `vellumory-history-back' returns from it, and
+        ;; its destination is rendered sharp at once.
+        (setq vellumory--last-motion 0.0)
+        (vellumory--remember-position)
         (vellumory--restore-position `((page . ,page) (y . ,(max 0 (alist-get 'y entry)))))
         (vellumory--refresh t))
        ((and (stringp uri) (string-match-p "\\`\\(?:https?://\\|mailto:\\)" uri))

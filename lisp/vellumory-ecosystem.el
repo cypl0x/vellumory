@@ -27,6 +27,11 @@
 ;; Without consult it is a plain completing read.  consult-buffer gains a
 ;; hidden source of open documents (narrow with d SPC).
 ;;
+;; `vellumory-consult-heading' (i, SPC m . in Doom) is consult-org-heading
+;; for the document's contents: entries by their path of titles, narrowed by
+;; level, each one's place shown while moving through them.  It also stands
+;; in for consult-outline, consult-imenu and consult-org-heading.
+;;
 ;; embark (`C-.' / SPC a) acts on the selection (search it, list its
 ;; occurrences, copy it) or, without one, on the page in view (go to, extract,
 ;; rotate, delete, keep, present from it).
@@ -40,6 +45,8 @@
 (defvar vellumory--hash)
 (defvar vellumory--current-page)
 (defvar vellumory--file)
+(defvar vellumory--outline)
+(defvar consult--narrow)
 (declare-function vellumory--with-document-text "vellumory-search" (callback))
 (declare-function vellumory--page-description "vellumory-navigation" (page))
 (declare-function vellumory--page-string "vellumory" ())
@@ -53,6 +60,13 @@
 (declare-function consult--read "consult" (table &rest options))
 (declare-function consult--lookup-member "consult" (selected candidates &rest _))
 (declare-function consult--buffer-state "consult" ())
+(declare-function consult--tofu-encode "consult" (n))
+(declare-function consult--annotate-align "consult" (cand ann))
+(declare-function consult--lookup-prop "consult" (prop selected candidates &rest _))
+(declare-function vellumory--navigation-ready "vellumory-navigation" ())
+(declare-function vellumory--outline-title "vellumory-navigation" (entry))
+(declare-function vellumory--follow-outline "vellumory-navigation" (source hash entry))
+(declare-function vellumory-goto-heading "vellumory-navigation" ())
 (declare-function vellumory-present "vellumory-present" (&optional from-start))
 (declare-function vellumory-page-text "vellumory" ())
 (declare-function vellumory-extract-pages "vellumory-edit" (spec output))
@@ -127,6 +141,84 @@ shows its line highlighted."
       (let ((chosen (completing-read prompt lines nil t)))
         (when-let* ((line (vellumory--line-of (or (car (member chosen lines)) chosen))))
           (vellumory--show-line line))))))
+
+;;;; Contents of the document
+
+(defvar vellumory--heading-history nil "Input history of `vellumory-consult-heading'.")
+
+(defconst vellumory--heading-faces
+  [outline-1 outline-2 outline-3 outline-4 outline-5 outline-6 outline-7 outline-8]
+  "Faces of the titles of a heading's path, by level, as Org's for its headings.")
+
+(defun vellumory--heading-candidates ()
+  "Candidates for the contents entries, as `consult-org-heading' shows headings.
+Each is its entry's path of titles, every title in its level's face, made
+unique by a hidden suffix.  The entry, its level and its page's label ride
+on the first character: the labels are this buffer's, and annotations are
+made in the minibuffer."
+  (let (path candidates (index 0))
+    (cl-loop for entry across vellumory--outline do
+      (let* ((depth (alist-get 'depth entry))
+             (page (alist-get 'page entry))
+             (uri (alist-get 'uri entry))
+             (where (cond ((natnump page) (vellumory--page-description page))
+                          ((and (stringp uri) (not (string-empty-p uri))) uri)
+                          (t ""))))
+        (setq path (append (take depth path)
+                           (list (propertize (vellumory--outline-title entry) 'face
+                                             (aref vellumory--heading-faces (% depth 8))))))
+        (let ((candidate (concat (string-join path "/") (consult--tofu-encode index))))
+          (add-text-properties 0 1 `(vellumory-heading ,entry vellumory-heading-level ,(1+ depth)
+                                     vellumory-heading-where ,where)
+                               candidate)
+          (push candidate candidates))
+        (cl-incf index)))
+    (nreverse candidates)))
+
+(defun vellumory--heading-annotation (candidate)
+  "The page label of CANDIDATE's entry, or its link, aligned after the candidates."
+  (consult--annotate-align
+   candidate (propertize (get-text-property 0 'vellumory-heading-where candidate)
+                         'face 'completions-annotations)))
+
+(defun vellumory--heading-preview (source origin)
+  "A consult state function showing in SOURCE the place of the entry previewed.
+Leaving without a choice goes back to ORIGIN; choosing an entry follows it."
+  (let ((hash (buffer-local-value 'vellumory--hash source)))
+    (lambda (action entry)
+      (with-current-buffer source
+        (pcase action
+          ('preview (let ((page (alist-get 'page entry)))
+                      (vellumory--restore-position
+                       (if (natnump page) `((page . ,page) (y . ,(max 0 (alist-get 'y entry)))) origin))
+                      (vellumory--refresh t)))
+          ('exit (vellumory--restore-position origin) (vellumory--refresh t))
+          ('return (when entry (vellumory--follow-outline source hash entry))))))))
+
+;;;###autoload
+(defun vellumory-consult-heading (&optional level)
+  "Go to an entry of the document's contents, showing each one's place.
+As `consult-org-heading' in Org: every entry by its path of titles, its
+page label beside it; 1 to 9 and a space narrow to that many levels, and a
+numeric prefix LEVEL starts so narrowed.  Without consult it is
+`vellumory-goto-heading'."
+  (interactive (list (and current-prefix-arg (prefix-numeric-value current-prefix-arg))))
+  (unless (derived-mode-p 'vellumory-mode) (user-error "Not a document"))
+  (if (not (require 'consult nil t))
+      (vellumory-goto-heading)
+    (vellumory--navigation-ready)
+    (consult--read
+     (or (vellumory--heading-candidates) (user-error "This PDF has no document outline"))
+     :prompt "Go to heading: " :category 'vellumory-heading :sort nil :require-match t
+     :history '(:input vellumory--heading-history)
+     :narrow (list :predicate (lambda (candidate)
+                                (<= (get-text-property 0 'vellumory-heading-level candidate)
+                                    (- consult--narrow ?0)))
+                   :keys (mapcar (lambda (key) (cons key (format "Level %c" key))) (number-sequence ?1 ?9)))
+     :initial-narrow (and level (max ?1 (min ?9 (+ level ?0))))
+     :annotate #'vellumory--heading-annotation
+     :lookup (apply-partially #'consult--lookup-prop 'vellumory-heading)
+     :state (vellumory--heading-preview (current-buffer) (vellumory--reading-position)))))
 
 ;;;; consult-buffer: open documents
 

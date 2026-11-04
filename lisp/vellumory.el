@@ -2000,7 +2000,7 @@ Mouse events inside an area arrive prefixed with its id.")
                        ("C-c C-p" . vellumory-present)
                        ("v" . vellumory-visual) ("M-s l" . vellumory-consult-line)
                        ("t" . vellumory-page-text) ("r" . vellumory-reload) ("R" . vellumory-reload)
-                       ("o" . vellumory-outline) ("i" . vellumory-goto-heading) ("L" . vellumory-goto-page-label)
+                       ("o" . vellumory-outline) ("i" . vellumory-consult-heading) ("L" . vellumory-goto-page-label)
                        ("T" . vellumory-thumbnails) ("s" . vellumory-sidebar-switch) ("C-c C-d" . vellumory-cycle-theme)
                        ("/" . vellumory-search) ("C-s" . vellumory-search) ("C-M-s" . vellumory-search-regexp)
                        ("M-n" . vellumory-search-next) ("M-p" . vellumory-search-previous)
@@ -2041,13 +2041,18 @@ Mouse events inside an area arrive prefixed with its id.")
     ;; Searching a buffer's lines (consult, Doom's SPC s s) searches the document's.
     (define-key map [remap consult-line] #'vellumory-consult-line)
     (define-key map [remap +default/search-buffer] #'vellumory-consult-line)
+    ;; Going to a heading (imenu, Doom's SPC s i, consult-outline) goes to an
+    ;; entry of the contents, its place shown while choosing; a remapped
+    ;; command is not remapped again, so imenu itself is too.
+    (dolist (command '(imenu consult-imenu consult-outline consult-org-heading))
+      (define-key map (vector 'remap command) #'vellumory-consult-heading))
     (define-key map [remap keyboard-quit] #'vellumory-search-quit)
     map))
 
 (easy-menu-define vellumory-menu vellumory-mode-map "Document reading commands."
   '("Document"
     ["Go to page…" vellumory-goto-page] ["Go to page label…" vellumory-goto-page-label]
-    ["Go to heading…" vellumory-goto-heading] ["Next page" vellumory-next-page]
+    ["Go to heading…" vellumory-consult-heading] ["Next page" vellumory-next-page]
     ["Previous page" vellumory-previous-page] "--"
     ["Fit width" vellumory-fit-width] ["Fit page" vellumory-fit-page] ["Fit content width (no margins)" vellumory-fit-content-width] ["Two pages (single, book, pairs)" vellumory-cycle-spread]
     ["Present full screen" vellumory-present]

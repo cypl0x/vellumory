@@ -1538,11 +1538,19 @@ completing read.  consult also gains a hidden source of open documents for
 #+attr_texinfo: :compact t
 - Key: o (vellumory-outline) :: Show or hide the document's contents (its
   outline) in a sidebar.
-- Key: i (vellumory-goto-heading) :: Go to a heading of the contents, with
-  completion.
+- Key: i (vellumory-consult-heading) :: Go to a heading of the contents.
+  With consult, as ~consult-org-heading~ in Org: every heading by its path
+  of titles, its page label beside it, and its place shown as you move
+  through the candidates (leaving returns to where you were).  Type a digit
+  1 to 9 and a space to narrow to that many levels, or give the level as a
+  numeric prefix.  Without consult it is ~vellumory-goto-heading~, an
+  ordinary completion.  In Doom it is ~SPC m .~, as in Org buffers, and
+  ~SPC m h~.
 
-Imenu knows the contents too, so ~M-x imenu~ and ~consult-imenu~ jump to
-headings.  In the contents sidebar:
+~imenu~ (Doom's ~SPC s i~), ~consult-imenu~, ~consult-outline~ and
+~consult-org-heading~ are remapped to this command in documents; Imenu
+knows the contents too.  Going to a heading, from here or from the sidebar,
+is a jump ~vellumory-history-back~ returns from.  In the contents sidebar:
 
 #+attr_texinfo: :compact t
 - Key: RET (vellumory-outline-activate) :: Go to the heading on this line.
@@ -3510,8 +3518,10 @@ changes how Emacs itself behaves:
 - In documents, these commands are remapped: ~write-file~ to
   ~vellumory-write-copy~, ~undo~ and ~undo-only~ to ~vellumory-undo~, ~undo-redo~
   to ~vellumory-redo~, ~text-scale-adjust~ to ~vellumory-text-scale-adjust~,
-  ~keyboard-quit~ to ~vellumory-search-quit~, and ~consult-line~ and Doom's
-  ~+default/search-buffer~ to ~vellumory-consult-line~.
+  ~keyboard-quit~ to ~vellumory-search-quit~, ~consult-line~ and Doom's
+  ~+default/search-buffer~ to ~vellumory-consult-line~, and ~imenu~,
+  ~consult-imenu~, ~consult-outline~ and ~consult-org-heading~ to
+  ~vellumory-consult-heading~.
 - Turning on ~follow-mode~ in a document turns on ~vellumory-follow-mode~
   instead.
 - A function on ~TeX-mode-hook~ makes Vellumory AUCTeX's PDF viewer after

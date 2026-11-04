@@ -2398,15 +2398,23 @@ completing read.  consult also gains a hidden source of open documents for
 @findex vellumory-outline
 Show or hide the document's contents (its
   outline) in a sidebar.
-@item @kbd{i} (@code{vellumory-goto-heading})
+@item @kbd{i} (@code{vellumory-consult-heading})
 @kindex i
-@findex vellumory-goto-heading
-Go to a heading of the contents@comma{} with
-  completion.
+@findex vellumory-consult-heading
+Go to a heading of the contents.
+  With consult@comma{} as @code{consult-org-heading} in Org: every heading by its path
+  of titles@comma{} its page label beside it@comma{} and its place shown as you move
+  through the candidates (leaving returns to where you were).  Type a digit
+  1 to 9 and a space to narrow to that many levels@comma{} or give the level as a
+  numeric prefix.  Without consult it is @code{vellumory-goto-heading}@comma{} an
+  ordinary completion.  In Doom it is @code{SPC m .}@comma{} as in Org buffers@comma{} and
+  @code{SPC m h}.
 @end table
 
-Imenu knows the contents too@comma{} so @code{M-x imenu} and @code{consult-imenu} jump to
-headings.  In the contents sidebar:
+@code{imenu} (Doom's @code{SPC s i})@comma{} @code{consult-imenu}@comma{} @code{consult-outline} and
+@code{consult-org-heading} are remapped to this command in documents; Imenu
+knows the contents too.  Going to a heading@comma{} from here or from the sidebar@comma{}
+is a jump @code{vellumory-history-back} returns from.  In the contents sidebar:
 
 @table @asis
 @item @kbd{@key{RET}} (@code{vellumory-outline-activate})
@@ -5468,8 +5476,10 @@ are dropped.
 In documents@comma{} these commands are remapped: @code{write-file} to
 @code{vellumory-write-copy}@comma{} @code{undo} and @code{undo-only} to @code{vellumory-undo}@comma{} @code{undo-redo}
 to @code{vellumory-redo}@comma{} @code{text-scale-adjust} to @code{vellumory-text-scale-adjust}@comma{}
-@code{keyboard-quit} to @code{vellumory-search-quit}@comma{} and @code{consult-line} and Doom's
-@code{+default/search-buffer} to @code{vellumory-consult-line}.
+@code{keyboard-quit} to @code{vellumory-search-quit}@comma{} @code{consult-line} and Doom's
+@code{+default/search-buffer} to @code{vellumory-consult-line}@comma{} and @code{imenu}@comma{}
+@code{consult-imenu}@comma{} @code{consult-outline} and @code{consult-org-heading} to
+@code{vellumory-consult-heading}.
 @item
 Turning on @code{follow-mode} in a document turns on @code{vellumory-follow-mode}
 instead.

@@ -446,7 +446,18 @@
           (vellumory--follow-outline (current-buffer) "new" external)
           (should (equal visited "https://lean-lang.org/")))
         (should-error (vellumory--follow-outline (current-buffer) "new" '((uri . "javascript:alert(1)")))
-                      :type 'user-error)))))
+                      :type 'user-error)
+        ;; Going to a heading is a jump `vellumory-history-back' returns from.
+        (let (shown)
+          (cl-letf (((symbol-function 'vellumory--reading-position) (lambda (&rest _) '((page . 2) (y . 40))))
+                    ((symbol-function 'vellumory--restore-position) (lambda (position &rest _) (setq shown position)))
+                    ((symbol-function 'vellumory--refresh) #'ignore))
+            (setq vellumory--back nil vellumory--forward '(((page . 0) (y . 0))) vellumory--last-motion 5.0)
+            (vellumory--follow-outline (current-buffer) "new" (aref vellumory--outline 1))
+            (should (equal shown '((page . 1) (y . 0))))
+            (should (equal vellumory--back '(((page . 2) (y . 40)))))
+            (should-not vellumory--forward)
+            (should (= vellumory--last-motion 0.0))))))))
 
 (ert-deftest vellumory-thumbnail-aspect-labels-and-buttons ()
   (save-window-excursion
@@ -2151,6 +2162,66 @@ returns, choosing shows the line highlighted."
               (should (equal (car moves) '((page . 7) (y . 3.0))))
               (funcall state 'return (nth 1 lines))
               (should (equal shown '("First line" t ((page . 0) (y . 0))))))))))))
+
+(defvar consult--narrow)
+
+(ert-deftest vellumory-consult-heading-candidates-preview-and-choice ()
+  "Headings by their path of titles, with level and page label; moving shows
+each place, leaving returns, choosing follows the entry.  Without consult it
+is the plain completion."
+  (with-temp-buffer
+    (setq major-mode 'vellumory-mode vellumory--outline (vellumory-test--navigation-data)
+          vellumory--labels ["i" "Ch-1" "Ch-2"] vellumory--pages [nil nil nil] vellumory--hash "h"
+          vellumory--navigation-state 'ready)
+    (cl-letf (((symbol-function 'consult--tofu-encode) (lambda (n) (string (+ #x100000 n))))
+              ((symbol-function 'consult--annotate-align) (lambda (_candidate annotation) annotation)))
+      (let* ((candidates (vellumory--heading-candidates))
+             (entry (lambda (n) (get-text-property 0 'vellumory-heading (nth n candidates)))))
+        (should (equal (mapcar (lambda (candidate) (substring-no-properties candidate 0 -1)) candidates)
+                       '("Chapter One" "Chapter One/Section" "Chapter One/Section" "Resources" "Resources/Website")))
+        ;; Equal paths stay apart, by their hidden suffix.
+        (should (= (length (delete-dups (copy-sequence candidates))) 5))
+        (should (equal (mapcar (lambda (c) (get-text-property 0 'vellumory-heading-level c)) candidates)
+                       '(1 2 2 1 2)))
+        (should (eq (get-text-property 0 'face (nth 1 candidates)) 'outline-1))
+        (should (eq (get-text-property (length "Chapter One/") 'face (nth 1 candidates)) 'outline-2))
+        (should (equal (funcall entry 2) (aref vellumory--outline 2)))
+        ;; Page labels come from the document's buffer, not the minibuffer's.
+        (should (equal (with-temp-buffer (mapcar #'vellumory--heading-annotation candidates))
+                       '("i (1)" "Ch-1 (2)" "Ch-2 (3)" "" "https://lean-lang.org/")))
+        (let (moves followed)
+          (cl-letf (((symbol-function 'vellumory--restore-position) (lambda (position &rest _) (push position moves)))
+                    ((symbol-function 'vellumory--refresh) #'ignore)
+                    ((symbol-function 'vellumory--follow-outline)
+                     (lambda (source hash chosen) (setq followed (list source hash chosen)))))
+            (let ((state (vellumory--heading-preview (current-buffer) '((page . 7) (y . 3.0)))))
+              (funcall state 'preview (funcall entry 2))
+              (should (equal (car moves) '((page . 2) (y . 120))))
+              ;; A link has no place in the document: the view stays where it was.
+              (funcall state 'preview (funcall entry 4))
+              (should (equal (car moves) '((page . 7) (y . 3.0))))
+              (funcall state 'preview (funcall entry 1))
+              (funcall state 'exit nil)
+              (should (equal (car moves) '((page . 7) (y . 3.0))))
+              (funcall state 'return (funcall entry 2))
+              (should (equal followed (list (current-buffer) "h" (funcall entry 2)))))))
+        (let ((require (symbol-function 'require)) options plain)
+          (cl-letf (((symbol-function 'require)
+                     (lambda (feature &rest rest) (or (eq feature 'consult) (apply require feature rest))))
+                    ((symbol-function 'consult--read) (lambda (&rest arguments) (setq options arguments) nil))
+                    ((symbol-function 'vellumory--reading-position) (lambda (&rest _) '((page . 0) (y . 0)))))
+            (vellumory-consult-heading 2))
+          (should (= (length (car options)) 5))
+          (should (eq (plist-get (cdr options) :initial-narrow) ?2))
+          (let ((consult--narrow ?1)
+                (predicate (plist-get (plist-get (cdr options) :narrow) :predicate)))
+            (should (equal (mapcar (lambda (c) (substring-no-properties c 0 -1)) (seq-filter predicate (car options)))
+                           '("Chapter One" "Resources"))))
+          (cl-letf (((symbol-function 'require)
+                     (lambda (feature &rest rest) (unless (eq feature 'consult) (apply require feature rest))))
+                    ((symbol-function 'vellumory-goto-heading) (lambda () (setq plain t))))
+            (vellumory-consult-heading))
+          (should plain))))))
 
 (ert-deftest vellumory-embark-targets-selection-or-page ()
   (with-temp-buffer

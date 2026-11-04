@@ -231,8 +231,10 @@ figure as a picture and its caption below, in the Emacs theme's colours./
   as you move through the candidates; =consult-line= and Doom's
   =SPC s s= are remapped to it in documents.
 - *Contents sidebar* (=o=), page previews (=T=), =s= to switch between
-  them; headings with completion (=i=); Imenu; page labels everywhere,
-  such as =iv (4)= (=L= goes to one).
+  them; headings (=i=, Doom's =SPC m .=): with consult, as
+  =consult-org-heading= in Org, each by its path of titles, narrowed by
+  level, its place shown as you move; Imenu; page labels everywhere, such
+  as =iv (4)= (=L= goes to one).
 - *Links*: hover for the target, click to follow, =f= labels every visible
   link with a short code.  *Link preview*: resting the mouse on a link
   within the document opens a small frame showing where it leads, at your
@@ -1162,8 +1164,10 @@ you:
   place; old save-place entries of documents are dropped.
 - Remapped in documents: =write-file= to =vellumory-write-copy=, =undo=
   and =undo-redo= to Vellumory's undo and redo, =text-scale-adjust=,
-  =consult-line= and Doom's =+default/search-buffer=; turning on
-  =follow-mode= in a document turns on =vellumory-follow-mode= instead.
+  =consult-line= and Doom's =+default/search-buffer=, =imenu= (Doom's
+  =SPC s i=), =consult-imenu=, =consult-outline= and =consult-org-heading=;
+  turning on =follow-mode= in a document turns on =vellumory-follow-mode=
+  instead.
 - A =TeX-mode-hook= function makes Vellumory AUCTeX's viewer after every
   other setup, Doom's included; set =vellumory-sync-tex-viewer= to =nil= to
   keep yours.

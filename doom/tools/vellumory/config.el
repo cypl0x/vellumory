@@ -34,7 +34,9 @@
         :localleader
         :desc "Contents"           "o" #'vellumory-outline
         :desc "Page previews"      "t" #'vellumory-thumbnails
-        :desc "Go to heading"      "h" #'vellumory-goto-heading
+        ;; As consult-org-heading on SPC m . in Org buffers.
+        :desc "Go to heading"      "." #'vellumory-consult-heading
+        :desc "Go to heading"      "h" #'vellumory-consult-heading
         :desc "Go to page"         "g" #'vellumory-goto-page
         :desc "Go to page label"   "l" #'vellumory-goto-page-label
         :desc "Find text"          "s" #'vellumory-search

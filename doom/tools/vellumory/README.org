@@ -59,8 +59,10 @@ vellumory-doctor= check all of it.
 | =q ZZ ZQ=         | quit, kill                                 |
 | =g?=              | the menu of every command and setting      |
 
-=SPC m= (localleader) lists the same commands with descriptions. ESC clears
-search highlights and then the selection. Resting the mouse on a link within
+=SPC m= (localleader) lists the same commands with descriptions; =SPC m .=
+goes to a heading as in Org buffers (consult-org-heading: by its path of
+titles, its place shown as you move), as does =SPC s i=. ESC clears search
+highlights and then the selection. Resting the mouse on a link within
 the document shows where it leads; right-click opens a menu anywhere.
 
 In reading mode, motions are evil's (it is text); =q= returns to the pages,
