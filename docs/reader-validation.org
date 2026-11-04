@@ -241,6 +241,50 @@ and jumps as fast as the fastest; Okular's and Papers' steps take 4 to 10 times
 longer to show, by animation (and here, for Papers, software composition). It
 uses more memory than any of them: about 70 MiB more than Evince on the short
 paper (110 with its tmpfs strips), 140 MiB more on ISO 32000 (180 with them).
+(Changed since: see the next section, and the benchmarks in the README.)
+
+** The worker's freed memory goes back at rest (fixed, 2026-11-04)
+A worker driven by JSON over a pipe (open tracemonkey.pdf, 112 strips at 900,
+1200 and 1600 pixels, a deep rest, =/proc/PID/smaps= a second later) kept
+42–66 MiB of anonymous memory on six render threads, 22 MiB on one; idle,
+before rendering, it holds 2.1–2.9 MiB whatever the number of threads. Two
+causes, from the sources:
+- glibc 2.42 gives each thread that allocates an arena of its own, and
+  =malloc_trim= gives back the free end of the main arena only (=malloc.c=,
+  =mtrim=: =systrim= for =main_arena=); another arena trims itself when its
+  free end passes =trim_threshold=, which rises to twice the largest block
+  freed by =munmap=, a page's raster. Mapping by mapping, three render threads'
+  arenas kept 10–25 MiB each (one sample).
+- This Lean (4.30) allocates through mimalloc 2.2 (=include/lean/config.h=
+  defines =LEAN_MIMALLOC=, not =LEAN_SMALL_ALLOCATOR=), whose =mi_collect=
+  collects the calling thread's heap only (=heap.c=). The worker called it on
+  its reading thread: the render threads' 17 MiB stayed.
+The worker now sets =M_ARENA_MAX= to 1 in a constructor, before =main= (the
+limit only applies to arenas made after it: =arena.c=, =arena_get2=; set at
+the start of =serve=, the worker still rested at 15–24 MiB), and every lane
+thread runs =mi_collect= when a rest comes and its lane has no job left.
+Interleaved with the previous worker, three runs of three rounds each:
+
+| Worker                     | 112 strips after a rest | 112 strips, no rest | Anonymous at rest |
+|----------------------------+-------------------------+---------------------+-------------------|
+| before                     | 1.08–1.09 s             | 1.39–1.48 s         | 42–58 MiB         |
+| one arena, per-thread rest | 1.13–1.20 s             | 1.36–1.46 s         | 5.4–6.0 MiB       |
+
+Three strips at a time with a light rest between, as reading asks: median
+10.3–12.5 ms before, 11.7–12.6 ms after, 90th percentile 19.2–26.9 against
+17.5–20.7. A fresh worker's open and first view (14 strips at 1280 pixels):
+median 69.3 ms before, 70.6 after, fifteen runs each. Tried and left: MuPDF
+allocating through mimalloc (=fz_alloc_context=) rendered as fast as before
+but rested at 23–28 MiB in mimalloc itself; two or three arenas rested at
+9–22 MiB.
+
+On the screen benchmark (=--keys --only vellumory,evince --rest 45=,
+tracemonkey.pdf, Emacs 31.1 for X, seven runs) Vellumory held, Emacs
+included, 139.3–146.5 MiB after the steps and 131.0–136.6 MiB 45 s later
+(PSS 120.1–127.4 and 114.7–118.9); Evince 142.1–144.2 and 142.1–144.1
+(PSS 125.5–127.5 and 128.9–131.0), in six runs: one sample of Evince,
+89.7 MiB (PSS 77.5), is unexplained. Against the previous worker (rest 3,
+twice three runs): 142.8–144.7 MiB after the steps against 156.6–174.1.
 
 ** Prefetched tiles are decoded ahead (2026-10-28)
 Emacs decodes an image when it is first drawn (=lookup_image=), about 5 ms for

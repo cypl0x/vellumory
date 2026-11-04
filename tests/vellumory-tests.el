@@ -621,6 +621,14 @@
               (should (alist-get 'result marked)))
             (should (string-match-p "Vellumory" (alist-get 'text (alist-get 'result
                            (vellumory-test--request "text" '((page . 0)))))))
+            ;; At rest every thread gives back its freed memory, then serves
+            ;; again: renders and document work after a deep and a light rest.
+            (should (alist-get 'result (vellumory-test--request "rest" '((deep . t)))))
+            (should (alist-get 'result (vellumory-test--request "rest" nil)))
+            (should (= (alist-get 'pixels (alist-get 'result (vellumory-test--request
+                                                               "render" '((page . 1) (width . 200) (top . 0) (bottom . 20)))))
+                       (* 200 20)))
+            (should (alist-get 'result (vellumory-test--request "text" '((page . 1)))))
             (should (alist-get 'error (vellumory-test--request "open" '((path . "/nonexistent/vellumory.pdf")))))
             ;; A failed open preserves the previous immutable document.
             (should (alist-get 'result (vellumory-test--request "text" '((page . 2))))))

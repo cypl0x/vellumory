@@ -436,6 +436,14 @@ freed memory kept by the C library (Emacs 528 MiB after 40 pages of ISO
 Sampled 45 s after reading, past the deep rest (2026-11-03, four runs):
 PSS level with Evince (123.5–133.7 against 125.4–128.4 MiB), RSS still above
 it (150–160 against 142–144)
+** DONE Below Evince at rest by RSS too (2026-11-04): the worker kept 42–66
+MiB it had freed, after rendering, in glibc's per-thread arenas (=malloc_trim=
+gives back the free end of the main arena only) and in the render threads'
+mimalloc heaps (=mi_collect= collects the calling thread's). One arena, set
+before =main=, and a collection on every lane thread at rest: 5.4–6.0 MiB,
+rendering as fast. Screen benchmark, seven runs, 45 s after the steps:
+131.0–136.6 MiB RSS and 114.7–118.9 PSS against Evince's 142.1–144.1 and
+128.9–131.0; just after the steps level (139.3–146.5 against 142.1–144.2)
 ** DONE macOS: the flake declares Apple silicon (every dependency evaluates
 there), the code avoids calls only Linux has (a sweep without /proc tested
 in a namespace that hides it) and Clang compiles the native code without a

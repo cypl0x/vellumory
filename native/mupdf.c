@@ -917,14 +917,18 @@ lean_obj_res vellumory_native_cores(lean_obj_arg world) {
 
 #ifdef __GLIBC__
 #include <malloc.h>
+/* By default glibc gives each thread that allocates an arena of its own, and
+   malloc_trim leaves the free memory at the end of every arena but the main
+   one (glibc 2.42 malloc.c, mtrim: systrim for main_arena only); an arena
+   trims itself only past twice the largest block freed, a whole page's
+   raster. Every thread shares the main arena instead. The limit only holds
+   for arenas made after it is set (arena.c, arena_get2), so it is set before
+   main, before any thread. */
+__attribute__((constructor)) static void share_arena(void) { mallopt(M_ARENA_MAX, 1); }
 #endif
 #ifdef LEAN_MIMALLOC
 #include <lean/mimalloc.h>
 #endif
-/* glibc keeps freed memory in its arenas for reuse, one arena per rendering
-   thread; malloc_trim gives what is free back to the system. Lean's objects
-   come from mimalloc, which is asked the same. Elsewhere the allocator decides
-   for itself. */
 #include <signal.h>
 /* Whether a process with PID exists, whoever owns it. */
 lean_obj_res vellumory_native_process_alive(uint32_t pid, lean_obj_arg world) {
@@ -933,6 +937,9 @@ lean_obj_res vellumory_native_process_alive(uint32_t pid, lean_obj_arg world) {
     return lean_io_result_mk_ok(lean_box(alive));
 }
 
+/* glibc keeps freed memory in its arenas for reuse; malloc_trim gives what is
+   free back to the system. Lean's objects come from mimalloc, which is asked
+   the same. Elsewhere the allocator decides for itself. */
 lean_obj_res vellumory_native_trim_memory(lean_obj_arg world) {
     (void)world;
 #ifdef LEAN_MIMALLOC
@@ -943,6 +950,17 @@ lean_obj_res vellumory_native_trim_memory(lean_obj_arg world) {
 #else
     return lean_io_result_mk_ok(lean_box(0));
 #endif
+}
+
+/* mimalloc keeps what a thread freed in that thread's heap, which only the
+   thread itself collects (mimalloc 2.2 heap.c: mi_collect collects the
+   calling thread's heap). */
+lean_obj_res vellumory_native_collect_thread(lean_obj_arg world) {
+    (void)world;
+#ifdef LEAN_MIMALLOC
+    mi_collect(true);
+#endif
+    return lean_io_result_mk_ok(lean_box(0));
 }
 
 extern lean_obj_res vellumory_mk_link(double x0, double y0, double x1, double y1, lean_obj_arg uri,

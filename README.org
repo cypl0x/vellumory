@@ -516,10 +516,7 @@ What pdf-tools still does that Vellumory does not is in the next section.
   smooth too: worst step 7.0–9.5 ms against Vellumory's 6.1–6.6 ms.
 - *Vellumory* needs a worker you build yourself today, has been used only
   on Linux (CI also runs its tests, graphical ones included, on macOS),
-  and is young (0.1.2).  Of the desktop readers, Evince holds less memory
-  than Vellumory with Emacs counted on a short paper: 4–16 MiB by PSS just
-  after reading, level 45 seconds later, while its resident set stays
-  6–16 MiB smaller; on a 5,019-page book Vellumory holds less.
+  and is young (0.1.2).
 
 ** Other and upcoming packages
 :PROPERTIES:
@@ -656,20 +653,32 @@ proportional sets (PSS, second runs) divide shared pages among processes:
 | Papers    | 166 MiB              | 166 MiB        | 147 MiB              | 147 MiB        |
 | Okular    | 190–192 MiB          | 190–192 MiB    | 176–178 MiB          | 176–177 MiB    |
 
-Vellumory holds less than Papers and Okular by either measure, and
+Vellumory then held less than Papers and Okular by either measure, and
 more than Evince: 5–30 MiB by RSS, 4–16 MiB by PSS at rest.  After 30
 seconds without reading (=vellumory-deep-rest-delay=) the worker also
 drops what it keeps to render quickly, display lists and decoded
 images: a scanned document of 10 pages went from 142 MB to 58 MB, and
-its next page then rendered in 15 ms, as the first ones did.  Sampled
-45 seconds after the steps instead (2026-11-03, four runs, =--rest 45=),
-past that rest, Vellumory and Evince were level by PSS, 123.5–133.7 MiB
-against 125.4–128.4 (Vellumory lower in one run, level in two, higher in
-one); by RSS Evince stayed smaller, 142–144 MiB against 150–160.  Of
-Vellumory's share, about 14 MiB are the worker's seven threads (six
-render, one does other document work): Lean's allocator gives every thread
-about 2 MiB before it does anything (=VELLUMORY_RENDER_THREADS= sets how
-many render).  Idle
+its next page then rendered in 15 ms, as the first ones did.
+
+The worker still kept memory it had freed, in two places.  The C library
+gave each render thread an arena of its own, and gives back the free end of
+none but the first (glibc's =malloc_trim=); Lean's allocator (mimalloc)
+collects what a thread freed only on that thread.  Every thread now shares
+the first arena, and each collects its own memory when reading rests:
+after 112 strips on six threads the worker's own memory at rest was 5–6 MiB
+instead of 42–58.  Rendering three strips at a time, as reading asks, took
+as long as before; a burst of 112 strips right after a rest took about 7%
+longer.  Measured on 2026-11-04, seven runs, memory sampled again 45
+seconds after the steps (=--rest 45=), past the deep rest:
+
+| Viewer    | RSS, after the steps | RSS, 45 s later | PSS, after the steps | PSS, 45 s later |
+|-----------+----------------------+-----------------+----------------------+-----------------|
+| Vellumory | 139.3–146.5 MiB      | 131.0–136.6 MiB | 120.1–127.4 MiB      | 114.7–118.9 MiB |
+| Evince    | 142.1–144.2 MiB      | 142.1–144.1 MiB | 125.5–127.5 MiB      | 128.9–131.0 MiB |
+
+Just after reading, Vellumory with Emacs holds as much as Evince; once
+reading rests, less by either measure.  One of Evince's seven samples
+(89.7 MiB) is left out, unexplained: the other six were all as above.  Idle
 with a document open, Emacs used 0.02–0.03 s of CPU a minute (an empty
 Emacs 0.00) and the worker none: the view is checked five times a
 second while you read, once a second after five quiet seconds.  On a

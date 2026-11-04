@@ -394,6 +394,11 @@ opaque forgetCaches (doc : @& Document) : IO Unit
 @[extern "vellumory_native_trim_memory"]
 opaque trimMemory : IO Bool
 
+/-- Give back what Lean's allocator (mimalloc) keeps of this thread's freed
+    memory; no other thread can. -/
+@[extern "vellumory_native_collect_thread"]
+opaque collectThread : IO Unit
+
 /-- One frame of a page transition composed from two pages (ISO 32000-1 Table 162):
     STYLE Dissolve, Glitter, Fade or Fly at PROGRESS (0 to 1) from the raster OLD
     to NEW (equally sized binary PPM files), written to OUT. Glitter and Fly move

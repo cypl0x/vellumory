@@ -2927,10 +2927,11 @@ The reader's own files (saved places, and the cache of remote documents
 and conversions) follow ~vellumory-state-directory~ and
 ~vellumory-cache-directory~ instead (see [[*Customization]]).
 
-Each render thread costs about 2 MB of memory before it renders anything:
-Lean's allocator prepares a page for every small object size on every
-thread.  With fewer threads, rendering many strips at once takes longer;
-=VELLUMORY_RENDER_THREADS=2= keeps about 8 MB less than six threads.
+An idle render thread costs little memory, and what the threads free while
+rendering goes back when reading rests: they share the C library's first
+arena, the one it can give back entirely, and each collects its own Lean
+objects.  After rendering, six threads rest at about as little as one; with
+fewer threads, rendering many strips at once takes longer.
 
 * Evil and Doom Emacs
 :PROPERTIES:

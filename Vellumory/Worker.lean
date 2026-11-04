@@ -143,6 +143,9 @@ structure LaneState where
   running : List (Nat × Native.Cookie) := []
   seq : Nat := 0
   stopping : Bool := false
+  /-- Rests of reading so far: after one, each thread gives back its freed
+      memory once its lane has no job left. -/
+  rests : Nat := 0
 
 structure Lane where
   state : Std.Mutex LaneState
@@ -192,29 +195,46 @@ def Lane.cancel (lane : Lane) (ids : List Nat) : IO (List (Scheduler.Job Work)) 
     if ids.contains id then cookie.abort
   return removed
 
-partial def Lane.serve (lane : Lane) (shared : Shared) : IO Unit := do
-  let next ← lane.state.atomicallyOnce lane.wake
-    (do let s ← get; return s.stopping || !s.queue.isEmpty)
+/-- What a lane's thread does next. -/
+inductive Lane.Next where
+  | stop
+  | job (job : Scheduler.Job Work)
+  /-- Give back this thread's freed memory: reading has rested RESTS times. -/
+  | rest (rests : Nat)
+
+/-- Serve LANE's jobs until it stops; RESTED, the rests this thread has
+    answered. -/
+partial def Lane.serve (lane : Lane) (shared : Shared) (rested : Nat := 0) : IO Unit := do
+  let next : Lane.Next ← lane.state.atomicallyOnce lane.wake
+    (do let s ← get; return s.stopping || !s.queue.isEmpty || s.rests != rested)
     (do
       let s ← get
-      if s.stopping then return none
+      if s.stopping then return .stop
       match Scheduler.pop s.queue with
-      | none => return none
+      | none => return .rest s.rests
       | some (job, rest) =>
         set { s with queue := rest, running := (job.id, job.payload.cookie) :: s.running }
-        return some job)
+        return .job job)
   match next with
-  | none => return ()
-  | some job =>
+  | .stop => return ()
+  | .rest rests =>
+    Native.collectThread
+    lane.serve shared rests
+  | .job job =>
     let reply ← try
         pure <| Json.mkObj [("id", job.payload.idJson), ("result", ← job.payload.action)]
       catch e => pure (errorReply job.payload.idJson e.toString)
     lane.state.atomically (modify fun s => { s with running := s.running.filter (·.1 != job.id) })
     shared.send reply
-    lane.serve shared
+    lane.serve shared rested
 
 def Lane.stop (lane : Lane) : IO Unit := do
   lane.state.atomically (modify fun s => { s with stopping := true })
+  lane.wake.notifyAll
+
+/-- Have each of LANE's threads give back its freed memory once idle. -/
+def Lane.rest (lane : Lane) : IO Unit := do
+  lane.state.atomically (modify fun s => { s with rests := s.rests + 1 })
   lane.wake.notifyAll
 
 /-! ## Requests -/
@@ -567,6 +587,8 @@ def serve : IO UInt32 := do
         -- Deeply, after a longer pause, the documents' caches go first.
         if (params.getObjValAs? Bool "deep").toOption.getD false then
           for (_, document) in opened do Native.forgetCaches document.doc
+        shared.render.rest
+        shared.document.rest
         let trimmed ← Native.trimMemory
         unless id.isNull do
           shared.send <| Json.mkObj [("id", id), ("result", Json.mkObj [("trimmed", toJson trimmed)])]
