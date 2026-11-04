@@ -30,7 +30,9 @@
 ;; `vellumory-consult-heading' (i, SPC m . in Doom) is consult-org-heading
 ;; for the document's contents: entries by their path of titles, narrowed by
 ;; level, each one's place shown while moving through them.  It also stands
-;; in for consult-outline, consult-imenu and consult-org-heading.
+;; in for imenu, consult-outline, consult-imenu and consult-org-heading.
+;; `vellumory-consult-heading-multi' (SPC m / in Doom, as consult-org-agenda,
+;; and SPC s I) offers the headings of every open document.
 ;;
 ;; embark (`C-.' / SPC a) acts on the selection (search it, list its
 ;; occurrences, copy it) or, without one, on the page in view (go to, extract,
@@ -46,6 +48,9 @@
 (defvar vellumory--current-page)
 (defvar vellumory--file)
 (defvar vellumory--outline)
+(defvar vellumory--navigation-state)
+(defvar vellumory--window-positions)
+(defvar vellumory--last-position)
 (defvar consult--narrow)
 (declare-function vellumory--with-document-text "vellumory-search" (callback))
 (declare-function vellumory--page-description "vellumory-navigation" (page))
@@ -65,6 +70,7 @@
 (declare-function consult--lookup-prop "consult" (prop selected candidates &rest _))
 (declare-function vellumory--navigation-ready "vellumory-navigation" ())
 (declare-function vellumory--outline-title "vellumory-navigation" (entry))
+(declare-function vellumory--outline-description "vellumory-navigation" (entry index))
 (declare-function vellumory--follow-outline "vellumory-navigation" (source hash entry))
 (declare-function vellumory-goto-heading "vellumory-navigation" ())
 (declare-function vellumory-present "vellumory-present" (&optional from-start))
@@ -150,13 +156,15 @@ shows its line highlighted."
   [outline-1 outline-2 outline-3 outline-4 outline-5 outline-6 outline-7 outline-8]
   "Faces of the titles of a heading's path, by level, as Org's for its headings.")
 
-(defun vellumory--heading-candidates ()
+(defun vellumory--heading-candidates (&optional prefix)
   "Candidates for the contents entries, as `consult-org-heading' shows headings.
 Each is its entry's path of titles, every title in its level's face, made
-unique by a hidden suffix.  The entry, its level and its page's label ride
-on the first character: the labels are this buffer's, and annotations are
-made in the minibuffer."
-  (let (path candidates (index 0))
+unique by a hidden suffix; with PREFIX, the buffer's name and a space lead,
+for the headings of several documents.  The entry, its level, its page's
+label and the target (buffer, snapshot hash and entry) ride on the first
+character: the labels are this buffer's, and annotations are made in the
+minibuffer."
+  (let ((lead (if prefix (concat (buffer-name) " ") "")) path candidates (index 0))
     (cl-loop for entry across vellumory--outline do
       (let* ((depth (alist-get 'depth entry))
              (page (alist-get 'page entry))
@@ -167,9 +175,11 @@ made in the minibuffer."
         (setq path (append (take depth path)
                            (list (propertize (vellumory--outline-title entry) 'face
                                              (aref vellumory--heading-faces (% depth 8))))))
-        (let ((candidate (concat (string-join path "/") (consult--tofu-encode index))))
+        (let ((candidate (concat lead (string-join path "/") (consult--tofu-encode index))))
           (add-text-properties 0 1 `(vellumory-heading ,entry vellumory-heading-level ,(1+ depth)
-                                     vellumory-heading-where ,where)
+                                     vellumory-heading-where ,where
+                                     vellumory-heading-document ,(length lead)
+                                     vellumory-heading-target (,(current-buffer) ,vellumory--hash . ,entry))
                                candidate)
           (push candidate candidates))
         (cl-incf index)))
@@ -211,14 +221,129 @@ numeric prefix LEVEL starts so narrowed.  Without consult it is
      (or (vellumory--heading-candidates) (user-error "This PDF has no document outline"))
      :prompt "Go to heading: " :category 'vellumory-heading :sort nil :require-match t
      :history '(:input vellumory--heading-history)
-     :narrow (list :predicate (lambda (candidate)
-                                (<= (get-text-property 0 'vellumory-heading-level candidate)
-                                    (- consult--narrow ?0)))
-                   :keys (mapcar (lambda (key) (cons key (format "Level %c" key))) (number-sequence ?1 ?9)))
-     :initial-narrow (and level (max ?1 (min ?9 (+ level ?0))))
+     :narrow (vellumory--heading-narrow) :initial-narrow (and level (max ?1 (min ?9 (+ level ?0))))
      :annotate #'vellumory--heading-annotation
      :lookup (apply-partially #'consult--lookup-prop 'vellumory-heading)
      :state (vellumory--heading-preview (current-buffer) (vellumory--reading-position)))))
+
+(defun vellumory--heading-narrow ()
+  "Narrowing of heading candidates: a digit, to that many levels."
+  (list :predicate (lambda (candidate)
+                     (<= (get-text-property 0 'vellumory-heading-level candidate) (- consult--narrow ?0)))
+        :keys (mapcar (lambda (key) (cons key (format "Level %c" key))) (number-sequence ?1 ?9))))
+
+(defun vellumory--heading-group (candidate transform)
+  "The document of CANDIDATE, as its group's title.
+With TRANSFORM, CANDIDATE without the document's name."
+  (let ((lead (get-text-property 0 'vellumory-heading-document candidate)))
+    (if transform (substring candidate lead) (substring candidate 0 (1- lead)))))
+
+(defun vellumory--headings-preview (window)
+  "A consult state function showing the place of the heading previewed.
+A document shown in a window of the frame is previewed there, any other in
+WINDOW.  Leaving without a choice puts back WINDOW's buffer and history and
+every place the preview moved; choosing a heading follows it."
+  (let ((original (window-buffer window))
+        (prev (copy-sequence (window-prev-buffers window)))
+        (next (copy-sequence (window-next-buffers window)))
+        ;; Where each buffer started in WINDOW when it came: a buffer leaving
+        ;; a window keeps its start, and shows there when it is shown again.
+        (starts (list (cons (window-buffer window) (window-start window))))
+        ;; ((WINDOW . BUFFER) PLACE RECORD LAST): BUFFER's place in WINDOW
+        ;; before the preview (nil: not shown there), what it remembered of
+        ;; WINDOW and its last reading place (what is saved).
+        moved)
+    (cl-labels
+        ((note (into buffer)
+           (when (and (buffer-live-p buffer) (not (assoc (cons into buffer) moved)))
+             (with-current-buffer buffer
+               (when (derived-mode-p 'vellumory-mode)
+                 (push (list (cons into buffer)
+                             (and (eq (window-buffer into) buffer) (vellumory--reading-position into))
+                             ;; A copy: placing the window sets this cell's value.
+                             (when-let* ((record (assq into vellumory--window-positions)))
+                               (cons (car record) (cdr record)))
+                             vellumory--last-position)
+                       moved)))))
+         (swap (buffer)
+           ;; The buffer leaving WINDOW is put back where it was, and keeps
+           ;; the start it came with.
+           (let ((leaving (window-buffer window)))
+             (note window leaving)
+             (when-let* ((start (alist-get leaving starts))) (set-window-start window start t))
+             (set-window-buffer window buffer)
+             (unless (assq buffer starts) (push (cons buffer (window-start window)) starts))))
+         (show (buffer)
+           (let* ((shown (get-buffer-window buffer)) (into (or shown window)))
+             (note into buffer)
+             (unless shown (swap buffer))
+             into))
+         (put-back ()
+           (when (and (buffer-live-p original) (not (eq (window-buffer window) original)))
+             (swap original))
+           (pcase-dolist (`((,into . ,buffer) ,place ,record ,last) moved)
+             (when (buffer-live-p buffer)
+               (with-current-buffer buffer
+                 (if place
+                     (progn (vellumory--restore-position place into) (vellumory--refresh t))
+                   (setq vellumory--window-positions (assq-delete-all into vellumory--window-positions)
+                         vellumory--last-position last)
+                   (when record (push record vellumory--window-positions))))))
+           (setq moved nil)))
+      (lambda (action target)
+        (pcase action
+          ('preview
+           (pcase-let ((`(,buffer ,_hash . ,entry) target))
+             (if-let* (((buffer-live-p buffer)) (page (alist-get 'page entry)) ((natnump page)))
+                 (let ((into (show buffer)))
+                   (with-current-buffer buffer
+                     (vellumory--restore-position `((page . ,page) (y . ,(max 0 (alist-get 'y entry)))) into)
+                     (vellumory--refresh t)))
+               (put-back))))
+          ('exit (put-back)
+                 (set-window-prev-buffers window prev)
+                 (set-window-next-buffers window next))
+          ('return
+           (pcase-let ((`(,buffer ,hash . ,entry) target))
+             (when entry
+               (when (and (buffer-live-p buffer) (not (get-buffer-window buffer)))
+                 (switch-to-buffer buffer))
+               (vellumory--follow-outline buffer hash entry)))))))))
+
+;;;###autoload
+(defun vellumory-consult-heading-multi (&optional level)
+  "Go to a heading of any open document, showing each one's place.
+As `consult-org-agenda' in Org: the headings of every open document,
+grouped by document, each by its path of titles; narrowing and LEVEL as
+in `vellumory-consult-heading'.  A document shown in a window is
+previewed there, any other in the selected window, and leaving puts
+everything back.  Without consult it is an ordinary completion."
+  (interactive (list (and current-prefix-arg (prefix-numeric-value current-prefix-arg))))
+  (let ((documents (seq-filter (lambda (buffer)
+                                 (with-current-buffer buffer
+                                   (and (derived-mode-p 'vellumory-mode) (eq vellumory--navigation-state 'ready)
+                                        (> (length vellumory--outline) 0))))
+                               (buffer-list))))
+    (unless documents (user-error "No open document has contents"))
+    (if (require 'consult nil t)
+        (consult--read
+         (mapcan (lambda (buffer) (with-current-buffer buffer (vellumory--heading-candidates t))) documents)
+         :prompt "Go to heading: " :category 'vellumory-heading :sort nil :require-match t
+         :history '(:input vellumory--heading-history)
+         :narrow (vellumory--heading-narrow) :initial-narrow (and level (max ?1 (min ?9 (+ level ?0))))
+         :annotate #'vellumory--heading-annotation :group #'vellumory--heading-group
+         :lookup (apply-partially #'consult--lookup-prop 'vellumory-heading-target)
+         :state (vellumory--headings-preview (selected-window)))
+      (let* ((choices (mapcan (lambda (buffer)
+                                (with-current-buffer buffer
+                                  (cl-loop for entry across vellumory--outline for index from 0
+                                           collect (list (format "%s: %s" (buffer-name)
+                                                                 (vellumory--outline-description entry index))
+                                                         buffer vellumory--hash entry))))
+                              documents))
+             (choice (cdr (assoc (completing-read "Heading: " choices nil t) choices))))
+        (unless (get-buffer-window (car choice)) (switch-to-buffer (car choice)))
+        (vellumory--follow-outline (car choice) (nth 1 choice) (nth 2 choice))))))
 
 ;;;; consult-buffer: open documents
 

@@ -37,6 +37,8 @@
         ;; As consult-org-heading on SPC m . in Org buffers.
         :desc "Go to heading"      "." #'vellumory-consult-heading
         :desc "Go to heading"      "h" #'vellumory-consult-heading
+        ;; As consult-org-agenda on SPC m /: the headings of every open document.
+        :desc "Heading of any document" "/" #'vellumory-consult-heading-multi
         :desc "Go to page"         "g" #'vellumory-goto-page
         :desc "Go to page label"   "l" #'vellumory-goto-page-label
         :desc "Find text"          "s" #'vellumory-search

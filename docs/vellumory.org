@@ -1547,10 +1547,17 @@ completing read.  consult also gains a hidden source of open documents for
   ordinary completion.  In Doom it is ~SPC m .~, as in Org buffers, and
   ~SPC m h~.
 
+~vellumory-consult-heading-multi~ (Doom's ~SPC m /~, as ~consult-org-agenda~
+in Org) offers the headings of every open document the same way, grouped by
+document: one shown in a window is previewed there, any other in the
+selected window, and leaving puts every window and place back.
+
 ~imenu~ (Doom's ~SPC s i~), ~consult-imenu~, ~consult-outline~ and
-~consult-org-heading~ are remapped to this command in documents; Imenu
-knows the contents too.  Going to a heading, from here or from the sidebar,
-is a jump ~vellumory-history-back~ returns from.  In the contents sidebar:
+~consult-org-heading~ are remapped to ~vellumory-consult-heading~ in
+documents, and ~consult-imenu-multi~ (Doom's ~SPC s I~) to
+~vellumory-consult-heading-multi~; Imenu knows the contents too.  Going to a
+heading, from these or from the sidebar, is a jump ~vellumory-history-back~
+returns from.  In the contents sidebar:
 
 #+attr_texinfo: :compact t
 - Key: RET (vellumory-outline-activate) :: Go to the heading on this line.
@@ -3519,9 +3526,10 @@ changes how Emacs itself behaves:
   ~vellumory-write-copy~, ~undo~ and ~undo-only~ to ~vellumory-undo~, ~undo-redo~
   to ~vellumory-redo~, ~text-scale-adjust~ to ~vellumory-text-scale-adjust~,
   ~keyboard-quit~ to ~vellumory-search-quit~, ~consult-line~ and Doom's
-  ~+default/search-buffer~ to ~vellumory-consult-line~, and ~imenu~,
+  ~+default/search-buffer~ to ~vellumory-consult-line~, ~imenu~,
   ~consult-imenu~, ~consult-outline~ and ~consult-org-heading~ to
-  ~vellumory-consult-heading~.
+  ~vellumory-consult-heading~, and ~consult-imenu-multi~ to
+  ~vellumory-consult-heading-multi~.
 - Turning on ~follow-mode~ in a document turns on ~vellumory-follow-mode~
   instead.
 - A function on ~TeX-mode-hook~ makes Vellumory AUCTeX's PDF viewer after

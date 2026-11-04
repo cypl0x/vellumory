@@ -2046,13 +2046,17 @@ Mouse events inside an area arrive prefixed with its id.")
     ;; command is not remapped again, so imenu itself is too.
     (dolist (command '(imenu consult-imenu consult-outline consult-org-heading))
       (define-key map (vector 'remap command) #'vellumory-consult-heading))
+    ;; Every open document's, as consult-imenu-multi (Doom's SPC s I) offers
+    ;; every open buffer's symbols.
+    (define-key map [remap consult-imenu-multi] #'vellumory-consult-heading-multi)
     (define-key map [remap keyboard-quit] #'vellumory-search-quit)
     map))
 
 (easy-menu-define vellumory-menu vellumory-mode-map "Document reading commands."
   '("Document"
     ["Go to page…" vellumory-goto-page] ["Go to page label…" vellumory-goto-page-label]
-    ["Go to heading…" vellumory-consult-heading] ["Next page" vellumory-next-page]
+    ["Go to heading…" vellumory-consult-heading]
+    ["Go to a heading of any document…" vellumory-consult-heading-multi] ["Next page" vellumory-next-page]
     ["Previous page" vellumory-previous-page] "--"
     ["Fit width" vellumory-fit-width] ["Fit page" vellumory-fit-page] ["Fit content width (no margins)" vellumory-fit-content-width] ["Two pages (single, book, pairs)" vellumory-cycle-spread]
     ["Present full screen" vellumory-present]

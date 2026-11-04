@@ -2223,6 +2223,74 @@ is the plain completion."
             (vellumory-consult-heading))
           (should plain))))))
 
+(ert-deftest vellumory-consult-heading-multi-across-documents ()
+  "Headings of every open document, grouped by it; a preview shows another
+document in the window, leaving puts back the window's document, its place
+and what the others remembered; choosing switches to the document."
+  (let* ((window (selected-window)) (before (window-buffer window))
+         (a (generate-new-buffer "a.pdf")) (b (generate-new-buffer "b.pdf")) moves followed)
+    (unwind-protect
+        (progn
+          (dolist (buffer (list a b))
+            (with-current-buffer buffer
+              (setq major-mode 'vellumory-mode vellumory--outline (vellumory-test--navigation-data)
+                    vellumory--labels ["i" "Ch-1" "Ch-2"] vellumory--pages [nil nil nil]
+                    vellumory--hash (buffer-name) vellumory--navigation-state 'ready
+                    vellumory--window-positions nil)))
+          (with-current-buffer b
+            (insert (make-string 400 ?x))
+            (setq vellumory--window-positions (list (cons window (cons '((page . 5)) '(1 . 1))))
+                  vellumory--last-position '((page . 6))))
+          ;; The start Emacs keeps for b, from a window that showed it.
+          (set-window-buffer window b)
+          (set-window-start window 120)
+          (set-window-buffer window a)
+          (cl-letf (((symbol-function 'consult--tofu-encode) (lambda (n) (string (+ #x100000 n))))
+                    ((symbol-function 'vellumory--reading-position)
+                     (lambda (&rest _) (if (eq (current-buffer) a) '((page . 9)) '((page . 4)))))
+                    ((symbol-function 'vellumory--restore-position)
+                     (lambda (position &optional into)
+                       ;; As the real one records the window's place, and the
+                       ;; refresh after it the reading place; it moves the start.
+                       (setf (alist-get into vellumory--window-positions) (cons position (quote (1 . 1))))
+                       (setq vellumory--last-position position)
+                       (set-window-start into (point-max))
+                       (push (list (buffer-name) position) moves)))
+                    ((symbol-function 'vellumory--refresh) #'ignore)
+                    ((symbol-function 'vellumory--follow-outline)
+                     (lambda (buffer hash entry) (setq followed (list buffer hash entry (window-buffer window))))))
+            (let* ((candidates (with-current-buffer b (vellumory--heading-candidates t)))
+                   (target (lambda (n) (get-text-property 0 'vellumory-heading-target (nth n candidates)))))
+              (should (string-prefix-p "b.pdf Chapter One/Section" (nth 1 candidates)))
+              (should (equal (vellumory--heading-group (nth 1 candidates) nil) "b.pdf"))
+              (should (equal (substring-no-properties (vellumory--heading-group (nth 1 candidates) t) 0 -1)
+                             "Chapter One/Section"))
+              (should (equal (funcall target 2) (cons b (cons "b.pdf" (aref (buffer-local-value (quote vellumory--outline) b) 2)))))
+              (let ((state (vellumory--headings-preview window))
+                    (of-a (with-current-buffer a
+                            (get-text-property 0 'vellumory-heading-target (nth 1 (vellumory--heading-candidates t))))))
+                (funcall state 'preview (funcall target 2))
+                (should (eq (window-buffer window) b))
+                (should (equal (car moves) '("b.pdf" ((page . 2) (y . 120)))))
+                (funcall state 'preview of-a)
+                (should (eq (window-buffer window) a))
+                (funcall state 'exit nil)
+                (should (eq (window-buffer window) a))
+                ;; a back where it was read, b remembering the window as before.
+                (should (equal (car moves) '("a.pdf" ((page . 9)))))
+                (should (equal (buffer-local-value (quote vellumory--window-positions) b)
+                               (list (cons window (cons (quote ((page . 5))) (quote (1 . 1)))))))
+                (should (equal (buffer-local-value (quote vellumory--last-position) b) (quote ((page . 6)))))
+                ;; b shows from the start it had before the preview.
+                (set-window-buffer window b)
+                (should (= (window-start window) 120))
+                (set-window-buffer window a)
+                (funcall state 'return (funcall target 2))
+                (should (equal followed (list b "b.pdf" (aref (buffer-local-value (quote vellumory--outline) b) 2) b)))))))
+      (set-window-buffer window before)
+      (kill-buffer a)
+      (kill-buffer b))))
+
 (ert-deftest vellumory-embark-targets-selection-or-page ()
   (with-temp-buffer
     (setq major-mode 'vellumory-mode vellumory--current-page 4)

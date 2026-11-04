@@ -2411,10 +2411,17 @@ Go to a heading of the contents.
   @code{SPC m h}.
 @end table
 
+@code{vellumory-consult-heading-multi} (Doom's @code{SPC m /}@comma{} as @code{consult-org-agenda}
+in Org) offers the headings of every open document the same way@comma{} grouped by
+document: one shown in a window is previewed there@comma{} any other in the
+selected window@comma{} and leaving puts every window and place back.
+
 @code{imenu} (Doom's @code{SPC s i})@comma{} @code{consult-imenu}@comma{} @code{consult-outline} and
-@code{consult-org-heading} are remapped to this command in documents; Imenu
-knows the contents too.  Going to a heading@comma{} from here or from the sidebar@comma{}
-is a jump @code{vellumory-history-back} returns from.  In the contents sidebar:
+@code{consult-org-heading} are remapped to @code{vellumory-consult-heading} in
+documents@comma{} and @code{consult-imenu-multi} (Doom's @code{SPC s I}) to
+@code{vellumory-consult-heading-multi}; Imenu knows the contents too.  Going to a
+heading@comma{} from these or from the sidebar@comma{} is a jump @code{vellumory-history-back}
+returns from.  In the contents sidebar:
 
 @table @asis
 @item @kbd{@key{RET}} (@code{vellumory-outline-activate})
@@ -5477,9 +5484,10 @@ In documents@comma{} these commands are remapped: @code{write-file} to
 @code{vellumory-write-copy}@comma{} @code{undo} and @code{undo-only} to @code{vellumory-undo}@comma{} @code{undo-redo}
 to @code{vellumory-redo}@comma{} @code{text-scale-adjust} to @code{vellumory-text-scale-adjust}@comma{}
 @code{keyboard-quit} to @code{vellumory-search-quit}@comma{} @code{consult-line} and Doom's
-@code{+default/search-buffer} to @code{vellumory-consult-line}@comma{} and @code{imenu}@comma{}
+@code{+default/search-buffer} to @code{vellumory-consult-line}@comma{} @code{imenu}@comma{}
 @code{consult-imenu}@comma{} @code{consult-outline} and @code{consult-org-heading} to
-@code{vellumory-consult-heading}.
+@code{vellumory-consult-heading}@comma{} and @code{consult-imenu-multi} to
+@code{vellumory-consult-heading-multi}.
 @item
 Turning on @code{follow-mode} in a document turns on @code{vellumory-follow-mode}
 instead.

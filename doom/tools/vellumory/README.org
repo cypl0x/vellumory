@@ -61,9 +61,10 @@ vellumory-doctor= check all of it.
 
 =SPC m= (localleader) lists the same commands with descriptions; =SPC m .=
 goes to a heading as in Org buffers (consult-org-heading: by its path of
-titles, its place shown as you move), as does =SPC s i=. ESC clears search
-highlights and then the selection. Resting the mouse on a link within
-the document shows where it leads; right-click opens a menu anywhere.
+titles, its place shown as you move), as does =SPC s i=; =SPC m /= and
+=SPC s I= go to a heading of any open document, as consult-org-agenda. ESC
+clears search highlights and then the selection. Resting the mouse on a link
+within the document shows where it leads; right-click opens a menu anywhere.
 
 In reading mode, motions are evil's (it is text); =q= returns to the pages,
 ~+~, ~-~ and ~=~ set the text size, =C= cycles its colours, =]] [[= go by page, =gO=
